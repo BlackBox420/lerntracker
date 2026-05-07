@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ETH Lerntracker 2026</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eeede8;
+    --txt: #1a1a1a; --txt2: #666; --txt3: #999;
+    --border: rgba(0,0,0,0.12); --border2: rgba(0,0,0,0.2);
+    --radius: 10px; --font: -apple-system, 'Helvetica Neue', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1c1c1e; --bg2:#2c2c2e; --bg3:#3a3a3c; --txt:#f2f2f7; --txt2:#aeaeb2; --txt3:#636366; --border:rgba(255,255,255,0.12); --border2:rgba(255,255,255,0.25); }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: var(--font); background: var(--bg); color: var(--txt); max-width: 460px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+  input, button { font-family: var(--font); }
+  input[type=date], input[type=time], input[type=text] { background: var(--bg2); color: var(--txt); border: 0.5px solid var(--border2); border-radius: 8px; padding: 9px 11px; font-size: 14px; width: 100%; }
+  input:focus { outline: 2px solid #D85A30; outline-offset: -1px; }
+  .header { padding: 14px 18px 10px; border-bottom: 0.5px solid var(--border); display: flex; justify-content: space-between; align-items: baseline; position: sticky; top: 0; background: var(--bg); z-index: 10; }
+  .header h1 { font-size: 17px; font-weight: 600; }
+  .header span { font-size: 11px; color: var(--txt3); }
+  .content { flex: 1; overflow-y: auto; padding: 14px 18px 80px; }
+  .nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 460px; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); border-top: 0.5px solid var(--border); background: var(--bg); z-index: 20; }
+  .nav button { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--txt3); padding: 3px 0; }
+  .nav button.active { color: #D85A30; }
+  .nav button span:first-child { font-size: 18px; line-height: 1; }
+  .nav button span:last-child { font-size: 9px; font-weight: 500; }
+  .card { background: var(--bg2); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-card { background: var(--bg2); border-radius: var(--radius); padding: 10px; text-align: center; }
+  .stat-label { font-size: 10px; color: var(--txt2); margin-bottom: 3px; }
+  .stat-val { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat-sub { font-size: 9px; color: var(--txt3); margin-top: 3px; }
+  .prog-bar-wrap { height: 5px; background: var(--bg3); border-radius: 3px; overflow: hidden; flex: 1; }
+  .prog-bar { height: 100%; border-radius: 3px; transition: width 0.5s; }
+  .subj-badge { border-radius: 5px; padding: 2px 7px; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+  .topic-btn { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; text-align: left; border: 1.5px solid transparent; background: var(--bg2); width: 100%; margin-bottom: 4px; transition: all 0.1s; }
+  .subj-btn { padding: 8px; border-radius: 8px; cursor: pointer; text-align: left; border: 2px solid transparent; background: var(--bg2); transition: all 0.12s; }
+  .session-row { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-radius: 10px; background: var(--bg2); margin-bottom: 5px; border: 0.5px solid var(--border); }
+  .del-btn { background: none; border: none; cursor: pointer; color: var(--txt3); font-size: 18px; padding: 2px 4px; line-height: 1; flex-shrink: 0; }
+  .save-btn { width: 100%; padding: 13px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .alert { border-radius: 8px; padding: 9px 12px; margin-bottom: 10px; font-size: 12px; font-weight: 500; }
+  .section-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+  .tiny { font-size: 9px; font-variant-numeric: tabular-nums; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Lerntracker</h1>
+  <span id="hdate"></span>
+</div>
+<div class="content" id="content"></div>
+<nav class="nav">
+  <button class="active" onclick="showTab('dash')" id="nav-dash"><span>⊞</span><span>Dashboard</span></button>
+  <button onclick="showTab('log')" id="nav-log"><span>+</span><span>Eintragen</span></button>
+  <button onclick="showTab('prog')" id="nav-prog"><span>◎</span><span>Fortschritt</span></button>
+  <button onclick="showTab('hist')" id="nav-hist"><span>≡</span><span>Verlauf</span></button>
+</nav>
+
+<script>
+const SUBJECTS=[
+  {id:'bc', name:'Biochemie',             short:'BC',  color:'#D85A30',bg:'#FAECE7',tx:'#4A1B0C'},
+  {id:'oc', name:'Organische Chemie I/II',short:'OC',  color:'#EF9F27',bg:'#FAEEDA',tx:'#412402'},
+  {id:'ic', name:'Inorganic Chemistry II',short:'IC',  color:'#7F77DD',bg:'#EEEDFE',tx:'#26215C'},
+  {id:'ciw',name:'Chemieingenieurwiss.',  short:'CIW', color:'#1D9E75',bg:'#E1F5EE',tx:'#04342C'},
+  {id:'ac', name:'Analytische Chemie',    short:'AC',  color:'#185FA5',bg:'#E6F1FB',tx:'#042C53'},
+  {id:'pc', name:'PC III: Quantenmech.',  short:'PC',  color:'#BA7517',bg:'#FFF3DC',tx:'#412402'},
+];
+const TOPICS={
+  bc:[{id:'bc1',name:'Glykolyse & Citratzyklus',targetH:5,prio:2},{id:'bc2',name:'ATP-Synthase & Atmungskette',targetH:4,prio:2},{id:'bc3',name:'Fettsäuren & Glykogen',targetH:8,prio:3},{id:'bc4',name:'Aminosäuren & Transaminierung',targetH:5,prio:3},{id:'bc5',name:'FAS, Polyketide & Terpene',targetH:6,prio:3},{id:'bc6',name:'Protein-Ligand & Kinetik',targetH:6,prio:3},{id:'bc7',name:'Enzymkatalyse (Chymotrypsin)',targetH:4,prio:3},{id:'bc8',name:'DNA-Replikation & -Reparatur',targetH:5,prio:2},{id:'bc9',name:'Transkription & Translation',targetH:5,prio:2}],
+  oc:[{id:'oc1',name:'OC I: Reaktivität & Carbonyl',targetH:5,prio:2},{id:'oc2',name:'OC I: Mechanismen & Bedingungen',targetH:6,prio:2},{id:'oc3',name:'OC I: Synthese & Retrosynthese',targetH:8,prio:3},{id:'oc4',name:'OC II: Pericyclisch & FMO',targetH:7,prio:3},{id:'oc5',name:'OC II: Metallorganik & Pd',targetH:6,prio:3},{id:'oc6',name:'OC II: FG-Umwandlungen',targetH:4,prio:3}],
+  ic:[{id:'ic1',name:'⭐ Fe-C Phasendiagramm',targetH:8,prio:3},{id:'ic2',name:'Keramiken & Halbleiter',targetH:6,prio:3},{id:'ic3',name:'Defekte & Kroeger-Vink',targetH:6,prio:3},{id:'ic4',name:'Phasendiagramme allgemein',targetH:5,prio:2},{id:'ic5',name:'Kristallstrukturen & Raumgr.',targetH:5,prio:2},{id:'ic6',name:'PXRD, DSC/TGA & UV-Vis',targetH:5,prio:3}],
+  ciw:[{id:'ciw1',name:'Reaktoren PFR/CSTR',targetH:5,prio:2},{id:'ciw2',name:'Wärmetransport (Nusselt)',targetH:7,prio:2},{id:'ciw3',name:'Stofftransport (Fick, Sh)',targetH:6,prio:2},{id:'ciw4',name:'Katalyse & Separation',targetH:7,prio:3}],
+  ac:[{id:'ac1',name:'IR/MS/NMR Spektroskopie',targetH:4,prio:1},{id:'ac2',name:'Trennmethoden & Chromatogr.',targetH:5,prio:2},{id:'ac3',name:'Elementanalytik (ICP, AAS)',targetH:4,prio:2},{id:'ac4',name:'XRF',targetH:2,prio:2}],
+  pc:[{id:'pc1',name:'Operatoren & Kommutatoren',targetH:2,prio:1},{id:'pc2',name:'Drehimpuls, Spin & Termsymb.',targetH:3,prio:2},{id:'pc3',name:'Schrödinger & Wellenfunktionen',targetH:3,prio:1},{id:'pc4',name:'Hyperfein & Zeeman-Effekt',targetH:4,prio:2}],
+};
+const ALL_TOPICS=Object.values(TOPICS).flat();
+const T_MAP=Object.fromEntries(ALL_TOPICS.map(t=>[t.id,t]));
+const S_MAP=Object.fromEntries(SUBJECTS.map(s=>[s.id,s]));
+
+let sessions=JSON.parse(localStorage.getItem('eth-lerntracker')||'[]');
+let curTab='dash', formState={subject:'bc',topic:'bc3',date:today(),start:'',end:'',note:''};
+
+function save(){localStorage.setItem('eth-lerntracker',JSON.stringify(sessions));}
+function today(){return new Date().toISOString().split('T')[0];}
+function toMins(t){const[h,m]=t.split(':').map(Number);return h*60+m;}
+function durH(a,b){const d=(toMins(b)-toMins(a))/60;return d>0?d:0;}
+function fmtH(h){if(!h||h<=0)return'—';const hh=Math.floor(h),mm=Math.round((h-hh)*60);if(hh===0)return mm+'min';if(mm===0)return hh+'h';return hh+'h '+mm+'m';}
+function topicH(tid){return sessions.filter(s=>s.topic===tid).reduce((a,s)=>a+s.hours,0);}
+function pct(t){return Math.min(100,Math.round((topicH(t.id)/t.targetH)*100));}
+function pctCol(p){return p>=90?'#1D9E75':p>=50?'#EF9F27':p>=20?'#BA7517':'#D85A30';}
+function fmtDate(ds){if(ds===today())return'Heute';const d=new Date(ds+'T12:00:00');return d.toLocaleDateString('de-CH',{weekday:'short',day:'numeric',month:'short'});}
+function weekStart(){const d=new Date(),day=d.getDay(),diff=day===0?-6:1-day;d.setDate(d.getDate()+diff);return d.toISOString().split('T')[0];}
+
+function showTab(t){
+  curTab=t;
+  ['dash','log','prog','hist'].forEach(id=>{
+    document.getElementById('nav-'+id).className=id===t?'active':'';
+  });
+  render();
+}
+
+function render(){
+  document.getElementById('hdate').textContent=new Date().toLocaleDateString('de-CH',{day:'numeric',month:'short',year:'numeric'});
+  const c=document.getElementById('content');
+  if(curTab==='dash') c.innerHTML=renderDash();
+  else if(curTab==='log') c.innerHTML=renderLog();
+  else if(curTab==='prog') c.innerHTML=renderProg();
+  else c.innerHTML=renderHist();
+}
+
+function renderDash(){
+  const td=today(), ws=weekStart();
+  const todayH=sessions.filter(s=>s.date===td).reduce((a,s)=>a+s.hours,0);
+  const weekH=sessions.filter(s=>s.date>=ws).reduce((a,s)=>a+s.hours,0);
+  const allH=sessions.reduce((a,s)=>a+s.hours,0);
+  const sortedD=[...new Set(sessions.map(s=>s.date))].sort().reverse();
+  let streak=0,chk=new Date(td);
+  for(const d of sortedD){if(d===chk.toISOString().split('T')[0]){streak++;chk.setDate(chk.getDate()-1);}else break;}
+  const wDays=Array.from({length:7},(_,i)=>{const d=new Date(ws+'T12:00:00');d.setDate(d.getDate()+i);const ds=d.toISOString().split('T')[0];return{ds,label:['Mo','Di','Mi','Do','Fr','Sa','So'][i],h:sessions.filter(s=>s.date===ds).reduce((a,s)=>a+s.hours,0),isToday:ds===td};});
+  const maxD=Math.max(...wDays.map(d=>d.h),3);
+  const behind=ALL_TOPICS.filter(t=>topicH(t.id)<t.targetH*0.15&&t.prio>=2).sort((a,b)=>b.prio-a.prio).slice(0,3);
+  
+  return `<div class="grid3" style="margin-bottom:12px">
+    ${[['Heute',fmtH(todayH),todayH===0?'Los geht\'s':todayH>=4?'Stark 💪':'Weiter so'],['Woche',fmtH(weekH),wDays.filter(d=>d.h>0).length+'/7 Tage'],['Streak',streak+'d',streak===0?'Starte!':streak>=5?'🔥 Top!':'🔥']].map(([l,v,s])=>`
+    <div class="stat-card"><div class="stat-label">${l}</div><div class="stat-val">${v}</div><div class="stat-sub">${s}</div></div>`).join('')}
+  </div>
+  <div class="card">
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Diese Woche</div>
+    <div style="display:flex;gap:5px;align-items:flex-end;height:72px">
+      ${wDays.map(d=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+        <div style="width:100%;height:58px;display:flex;align-items:flex-end;position:relative">
+          ${d.h>0?`<div style="width:100%;border-radius:3px 3px 0 0;background:${d.isToday?'#D85A30':'#5DCAA5'};opacity:0.85;height:${Math.max(5,(d.h/maxD)*58)}px"></div>`:'<div style="width:100%;height:2px;background:var(--bg3);border-radius:2px"></div>'}
+          ${d.isToday?'<div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:#D85A30"></div>':''}
+        </div>
+        <div style="font-size:9px;color:${d.isToday?'var(--txt)':'var(--txt3)'};font-weight:${d.isToday?600:400}">${d.label}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+  ${behind.length>0?`<div style="background:#FAECE7;border-radius:10px;padding:12px;margin-bottom:10px;border:0.5px solid #F0997B">
+    <div style="font-size:11px;font-weight:600;color:#4A1B0C;margin-bottom:6px">Als nächstes angehen</div>
+    ${behind.map(t=>{const skey=Object.keys(TOPICS).find(k=>TOPICS[k].find(tt=>tt.id===t.id));const subj=S_MAP[skey];return`<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px"><span style="font-size:9px;padding:2px 6px;border-radius:4px;background:${subj.bg};color:${subj.tx};font-weight:600;flex-shrink:0">${subj.short}</span><span style="font-size:11px;color:#4A1B0C;flex:1">${t.name}</span><span style="font-size:10px;color:#993C1D;font-variant-numeric:tabular-nums;flex-shrink:0">${fmtH(topicH(t.id))}/${fmtH(t.targetH)}</span></div>`;}).join('')}
+  </div>`:''}
+  <div class="card">
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Gesamt — ${fmtH(allH)}</div>
+    ${SUBJECTS.map(subj=>{const sh=sessions.filter(s=>s.subject===subj.id).reduce((a,s)=>a+s.hours,0);const target=TOPICS[subj.id].reduce((a,t)=>a+t.targetH,0);const p=Math.min(100,Math.round((sh/target)*100));return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="width:30px;height:20px;border-radius:5px;background:${subj.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:9px;font-weight:600;color:${subj.tx}">${subj.short}</span></div><div class="prog-bar-wrap"><div class="prog-bar" style="width:${p}%;background:${pctCol(p)}"></div></div><div style="font-size:10px;color:var(--txt3);width:40px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums">${sh>0?fmtH(sh):'—'}</div></div>`;}).join('')}
+  </div>`;
+}
+
+function renderLog(){
+  const subj=S_MAP[formState.subject];
+  const dur=formState.start&&formState.end?durH(formState.start,formState.end):0;
+  return `<div class="section-title">Einheit eintragen</div>
+  <div style="font-size:11px;color:var(--txt2);margin-bottom:7px">Fach</div>
+  <div class="grid2" style="margin-bottom:10px">
+    ${SUBJECTS.map(s=>`<button class="subj-btn" onclick="setSubject('${s.id}')" style="border-color:${formState.subject===s.id?s.color:'transparent'};background:${formState.subject===s.id?s.bg:'var(--bg2)'}">
+      <div style="font-size:11px;font-weight:600;color:${formState.subject===s.id?s.tx:'var(--txt2)'}">${s.short}</div>
+      <div style="font-size:9px;color:${formState.subject===s.id?s.tx:'var(--txt3)'};margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name}</div>
+    </button>`).join('')}
+  </div>
+  <div style="font-size:11px;color:var(--txt2);margin-bottom:6px">Thema</div>
+  <div style="margin-bottom:12px">
+    ${TOPICS[formState.subject].map(t=>{const p=pct(t);return`<button class="topic-btn" onclick="setTopic('${t.id}')" style="border-color:${formState.topic===t.id?subj.color:'transparent'};background:${formState.topic===t.id?subj.bg:'var(--bg2)'}">
+      <div style="flex:1;font-size:11px;color:${formState.topic===t.id?subj.tx:'var(--txt)'}">${t.name}</div>
+      <div style="flex-shrink:0;width:52px">
+        <div style="height:4px;background:var(--bg3);border-radius:2px;overflow:hidden"><div style="height:100%;width:${p}%;background:${pctCol(p)};border-radius:2px"></div></div>
+        <div class="tiny" style="color:var(--txt3);margin-top:2px;text-align:right">${p}%</div>
+      </div>
+    </button>`;}).join('')}
+  </div>
+  <div style="font-size:11px;color:var(--txt2);margin-bottom:5px">Datum</div>
+  <input type="date" value="${formState.date}" onchange="formState.date=this.value" style="margin-bottom:10px">
+  <div class="grid2" style="margin-bottom:10px">
+    <div><div style="font-size:11px;color:var(--txt2);margin-bottom:5px">Von</div><input type="time" value="${formState.start}" onchange="formState.start=this.value;updateDur()"></div>
+    <div><div style="font-size:11px;color:var(--txt2);margin-bottom:5px">Bis</div><input type="time" value="${formState.end}" onchange="formState.end=this.value;updateDur()"></div>
+  </div>
+  <div id="dur-hint" style="margin-bottom:10px">${dur>0?`<div class="alert" style="background:#E1F5EE;color:#085041">⏱ ${fmtH(dur)}</div>`:''}</div>
+  <input type="text" value="${formState.note}" oninput="formState.note=this.value" placeholder="Notiz (optional)" style="margin-bottom:14px">
+  <button class="save-btn" id="save-btn" onclick="addSession()" style="background:${dur>0?'#D85A30':'var(--bg2)'};color:${dur>0?'white':'var(--txt3)'}">Einheit speichern</button>`;
+}
+
+function renderProg(){
+  return`<div class="section-title">Fortschritt je Thema</div>
+  ${SUBJECTS.map(subj=>{
+    const topics=TOPICS[subj.id];
+    const doneH=topics.reduce((a,t)=>a+topicH(t.id),0);
+    const totalT=topics.reduce((a,t)=>a+t.targetH,0);
+    return`<div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+        <div class="subj-badge" style="background:${subj.bg};color:${subj.tx}">${subj.short} — ${subj.name}</div>
+        <div style="font-size:10px;color:var(--txt3);margin-left:auto;font-variant-numeric:tabular-nums">${fmtH(doneH)}/${fmtH(totalT)}</div>
+      </div>
+      ${topics.map(t=>{const h=topicH(t.id),p=pct(t);return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;padding:7px 10px;border-radius:8px;background:var(--bg2)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:var(--txt);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name}</div>
+          <div class="prog-bar-wrap"><div class="prog-bar" style="width:${p}%;background:${pctCol(p)}"></div></div>
+        </div>
+        <div style="flex-shrink:0;text-align:right;width:55px">
+          <div style="font-size:9px;padding:2px 5px;border-radius:4px;background:${p>=90?'#E1F5EE':p>=50?'#FAEEDA':p>=20?'#FFF3DC':'#FAECE7'};color:${pctCol(p)};font-weight:600">${p}%</div>
+          <div class="tiny" style="color:var(--txt3);margin-top:2px">${fmtH(h)}/${fmtH(t.targetH)}</div>
+        </div>
+      </div>`;}).join('')}
+    </div>`;
+  }).join('')}`;
+}
+
+function renderHist(){
+  const grouped={};
+  sessions.forEach(s=>{if(!grouped[s.date])grouped[s.date]=[];grouped[s.date].push(s);});
+  const gDates=Object.keys(grouped).sort().reverse();
+  if(!gDates.length)return`<div class="section-title">Verlauf</div><div style="text-align:center;color:var(--txt3);font-size:13px;margin-top:4rem;line-height:1.8">Noch keine Einheiten.<br>Fang am Samstag an!</div>`;
+  return`<div class="section-title">Verlauf</div>
+  ${gDates.map(date=>{
+    const ds=grouped[date],dh=ds.reduce((a,s)=>a+s.hours,0);
+    return`<div style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:12px;font-weight:600;color:var(--txt2)">${fmtDate(date)}</div>
+        <div style="font-size:11px;color:var(--txt3);font-variant-numeric:tabular-nums">${fmtH(dh)}</div>
+      </div>
+      ${[...ds].sort((a,b)=>a.start.localeCompare(b.start)).map(s=>{
+        const subj=S_MAP[s.subject],topic=T_MAP[s.topic];
+        return`<div class="session-row">
+          <div style="width:32px;height:32px;border-radius:7px;background:${subj.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:9px;font-weight:600;color:${subj.tx}">${subj.short}</span></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${topic?topic.name:s.topic}</div>
+            ${s.note?`<div style="font-size:10px;color:var(--txt2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.note}</div>`:''}
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:11px;color:var(--txt2);font-variant-numeric:tabular-nums">${s.start}–${s.end}</div>
+            <div style="font-size:10px;color:var(--txt3);margin-top:1px">${fmtH(s.hours)}</div>
+          </div>
+          <button class="del-btn" onclick="delSession(${s.id})">×</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('')}`;
+}
+
+function setSubject(id){formState.subject=id;formState.topic=TOPICS[id][0].id;render();}
+function setTopic(id){formState.topic=id;render();}
+function updateDur(){
+  const dur=formState.start&&formState.end?durH(formState.start,formState.end):0;
+  const hint=document.getElementById('dur-hint');
+  if(hint)hint.innerHTML=dur>0?`<div class="alert" style="background:#E1F5EE;color:#085041">⏱ ${fmtH(dur)}</div>`:'';
+  const btn=document.getElementById('save-btn');
+  if(btn){btn.style.background=dur>0?'#D85A30':'var(--bg2)';btn.style.color=dur>0?'white':'var(--txt3)';}
+}
+function addSession(){
+  if(!formState.start||!formState.end)return;
+  const h=durH(formState.start,formState.end);if(h<=0)return;
+  sessions.unshift({id:Date.now(),subject:formState.subject,topic:formState.topic,date:formState.date,start:formState.start,end:formState.end,note:formState.note,hours:h});
+  save();
+  const btn=document.getElementById('save-btn');
+  if(btn){btn.textContent='✓  Gespeichert';btn.style.background='#1D9E75';}
+  formState.start='';formState.end='';formState.note='';
+  setTimeout(()=>render(),1500);
+}
+function delSession(id){sessions=sessions.filter(s=>s.id!==id);save();render();}
+render();
+</script>
+</body>
+</html>
