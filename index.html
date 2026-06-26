@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <title>ETH Lernplan 2026</title>
 <style>
-:root {
+:root{
   --bg:#fff;--bg2:#f2f2f7;--bg3:#e5e5ea;
   --txt:#1c1c1e;--txt2:#6c6c70;--txt3:#aeaeb2;
   --border:rgba(0,0,0,.1);--r:12px;--r2:8px;
@@ -24,6 +24,7 @@ html,body{height:100%}
 body{font-family:var(--font);background:var(--bg);color:var(--txt);display:flex;flex-direction:column;max-width:480px;margin:0 auto}
 input,button{font-family:inherit;font-size:inherit}
 
+/* Header */
 .hdr{position:sticky;top:0;z-index:50;padding:12px 16px 10px;background:var(--bg);border-bottom:.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .hdr-title{font-size:17px;font-weight:700}
 .hdr-date{font-size:12px;color:var(--txt2)}
@@ -31,61 +32,99 @@ input,button{font-family:inherit;font-size:inherit}
 
 .content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 16px 40px}
 
-.exam-bar{display:flex;gap:8px;overflow-x:auto;margin-bottom:14px;scrollbar-width:none}
+/* Exam bar */
+.exam-bar{display:flex;gap:7px;overflow-x:auto;margin-bottom:14px;scrollbar-width:none}
 .exam-bar::-webkit-scrollbar{display:none}
-.exam-chip{flex-shrink:0;border-radius:10px;padding:7px 12px;font-size:10px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:48px}
-.exam-days{font-size:18px;font-weight:800;line-height:1}
+.exam-chip{flex-shrink:0;border-radius:10px;padding:6px 10px;font-size:10px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:44px;text-align:center}
+.exam-days{font-size:17px;font-weight:800;line-height:1}
 
-.rec-card{border-radius:var(--r);padding:14px;margin-bottom:14px;background:#16213e}
-.rec-title{font-size:10px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px}
-.rec-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid rgba(255,255,255,.08)}
-.rec-item:last-child{border-bottom:none;padding-bottom:0}
-.rec-rank{font-size:11px;font-weight:700;color:rgba(255,255,255,.3);width:18px;flex-shrink:0}
-.rec-body{flex:1;min-width:0}
-.rec-name{font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rec-meta{font-size:10px;color:rgba(255,255,255,.4);margin-top:2px}
-.rec-score{font-size:15px;font-weight:700;flex-shrink:0}
+/* Tagesplan card */
+.day-card{background:#16213e;border-radius:var(--r);padding:14px;margin-bottom:14px}
+.day-section-title{font-size:10px;font-weight:700;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.8px;margin-bottom:9px}
+.day-divider{height:.5px;background:rgba(255,255,255,.1);margin:12px 0}
 
-.filter-bar{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none}
+/* Review chips (Heute wiederholen) */
+.review-chips{display:flex;flex-wrap:wrap;gap:7px}
+.rev-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 10px;border-radius:20px;
+  font-size:11px;font-weight:600;
+  border:1.5px solid;cursor:pointer;
+  background:none;color:#fff;transition:all .2s;
+}
+.rev-chip.done{opacity:.4;text-decoration:line-through}
+.rev-chip-check{font-size:13px;line-height:1}
+.all-done-msg{font-size:12px;color:rgba(255,255,255,.5);font-style:italic}
+
+/* Learn items (Neu lernen) */
+.learn-item{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:.5px solid rgba(255,255,255,.08)}
+.learn-item:last-child{border-bottom:none;padding-bottom:0}
+.learn-rank{font-size:11px;font-weight:700;color:rgba(255,255,255,.3);width:18px;flex-shrink:0}
+.learn-body{flex:1;min-width:0}
+.learn-name{font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.learn-meta{font-size:10px;color:rgba(255,255,255,.4);margin-top:2px}
+.learn-score{font-size:14px;font-weight:700;flex-shrink:0}
+
+/* Filter */
+.filter-bar{display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;scrollbar-width:none}
 .filter-bar::-webkit-scrollbar{display:none}
 .fchip{flex-shrink:0;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid var(--border);background:var(--bg2);color:var(--txt2);cursor:pointer;transition:all .15s}
 
-.sec-hdr{font-size:12px;font-weight:700;color:var(--txt3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.sec-hdr{font-size:11px;font-weight:700;color:var(--txt3);margin-bottom:7px;text-transform:uppercase;letter-spacing:.5px}
 
-.topic-card{background:var(--bg2);border-radius:var(--r2);padding:10px 12px;margin-bottom:7px}
-.tc-top{display:flex;align-items:flex-start;gap:8px;margin-bottom:7px}
-.badge{border-radius:5px;padding:2px 7px;font-size:10px;font-weight:700;flex-shrink:0;margin-top:1px}
-.tc-info{flex:1;min-width:0}
-.tc-name{font-size:13px;font-weight:500;line-height:1.3}
-.tc-sub{display:flex;align-items:center;gap:5px;margin-top:3px;flex-wrap:wrap}
-.tc-grp{font-size:9px;color:var(--txt3)}
-.ob-tag{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;background:#d1fae5;color:#065f46}
+/* Compact topic rows */
+.t-row{background:var(--bg2);border-radius:var(--r2);margin-bottom:5px;overflow:hidden;cursor:pointer;transition:background .1s}
+.t-row:active{background:var(--bg3)}
+.t-row-main{display:flex;align-items:center;gap:7px;padding:8px 10px 5px}
+.t-rank{font-size:9px;font-weight:700;color:var(--txt3);width:16px;flex-shrink:0;text-align:right}
+.t-badge{border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;flex-shrink:0}
+.t-name{flex:1;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-right{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.t-pct{font-size:10px;color:var(--txt2);font-variant-numeric:tabular-nums;min-width:26px;text-align:right}
+.t-score{font-size:11px;font-weight:700;min-width:28px;text-align:right}
+.t-bar-wrap{height:2px;background:var(--bg3)}
+.t-bar{height:100%;transition:width .3s}
+
+/* Check button */
+.chk-btn{
+  width:22px;height:22px;border-radius:50%;
+  border:1.5px solid;background:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;flex-shrink:0;transition:all .15s;
+}
+.chk-btn.done{color:#fff!important;border-color:#34c759!important;background:#34c759}
+
+/* Expanded section */
+.t-expand{padding:8px 10px 10px;border-top:.5px solid var(--border)}
+.t-expand-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.meta-tag{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px}
+.ob-tag{background:#d1fae5;color:#065f46}
 @media(prefers-color-scheme:dark){.ob-tag{background:#064e3b;color:#6ee7b7}}
 .rev-tag{background:#dbeafe;color:#1e40af}
 @media(prefers-color-scheme:dark){.rev-tag{background:#1e3a5f;color:#93c5fd}}
 .w-dots{display:flex;gap:2px}
 .w-dot{width:5px;height:5px;border-radius:50%}
-.score-pill{flex-shrink:0;padding:3px 7px;border-radius:8px;font-size:11px;font-weight:700}
 
-.score-bar-wrap{height:3px;border-radius:2px;overflow:hidden;background:var(--bg3);margin-bottom:8px}
-.score-bar{height:100%;border-radius:2px;transition:width .4s}
-
-.tc-controls{display:flex;gap:10px;align-items:flex-end}
+.t-ctrl-row{display:flex;gap:10px;align-items:flex-end}
 .ctrl{flex:1;display:flex;flex-direction:column;gap:3px}
-.ctrl-row{display:flex;justify-content:space-between;align-items:center}
-.ctrl-label{font-size:9px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px}
+.ctrl-hdr{display:flex;justify-content:space-between}
+.ctrl-lbl{font-size:9px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px}
 .ctrl-val{font-size:11px;color:var(--txt2);font-variant-numeric:tabular-nums}
+.h-wrap{flex:0 0 58px;display:flex;flex-direction:column;gap:3px;align-items:center}
+.h-input{background:var(--bg3);border:none;border-radius:6px;padding:5px 4px;width:100%;font-size:13px;color:var(--txt);text-align:center;-moz-appearance:textfield}
+.h-input::-webkit-inner-spin-button,.h-input::-webkit-outer-spin-button{-webkit-appearance:none}
+.h-input:focus{outline:2px solid #007aff;outline-offset:-2px}
+.review-hint{font-size:10px;color:#93c5fd;margin-top:6px;font-style:italic}
 
+/* Range sliders */
 input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;width:100%;cursor:pointer;outline:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.3);cursor:pointer;transition:transform .1s}
 input[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}
 input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.3);border:none;cursor:pointer}
+input[type=range].big::-webkit-slider-thumb{width:26px;height:26px}
+input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 
-.h-wrap{flex:0 0 60px;display:flex;flex-direction:column;gap:3px}
-.h-input{background:var(--bg3);border:none;border-radius:6px;padding:6px 4px;width:100%;font-size:13px;color:var(--txt);text-align:center;-moz-appearance:textfield}
-.h-input::-webkit-inner-spin-button,.h-input::-webkit-outer-spin-button{-webkit-appearance:none}
-.h-input:focus{outline:2px solid #007aff;outline-offset:-2px;border-radius:6px}
-
+/* Modal */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .2s}
 .modal-bg.open{opacity:1;pointer-events:all}
 .modal{background:var(--bg);border-radius:20px 20px 0 0;padding:20px 16px calc(24px + env(safe-area-inset-bottom));width:100%;max-height:82vh;overflow-y:auto;transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);position:relative}
@@ -93,16 +132,12 @@ input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;bac
 .modal-title{font-size:16px;font-weight:700;text-align:center;margin-bottom:4px}
 .modal-sub{font-size:12px;color:var(--txt2);text-align:center;margin-bottom:16px}
 .modal-close{position:absolute;top:16px;right:16px;background:var(--bg2);border:none;cursor:pointer;width:28px;height:28px;border-radius:50%;font-size:14px;color:var(--txt2);display:flex;align-items:center;justify-content:center}
-
 .motiv-row{padding:14px 0;border-bottom:.5px solid var(--border)}
 .motiv-row:last-child{border-bottom:none}
 .motiv-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .motiv-name{font-size:14px;font-weight:600}
 .motiv-info{font-size:11px;color:var(--txt2);margin-top:2px}
 .motiv-val{font-size:24px;font-weight:800;line-height:1}
-
-input[type=range].big::-webkit-slider-thumb{width:26px;height:26px}
-input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 </style>
 </head>
 <body>
@@ -117,7 +152,7 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 
 <div class="content">
   <div class="exam-bar" id="exam-bar"></div>
-  <div id="rec-section"></div>
+  <div id="day-card"></div>
   <div class="filter-bar" id="filter-bar"></div>
   <div class="sec-hdr">Prioritätsliste</div>
   <div id="topic-list"></div>
@@ -133,7 +168,7 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 </div>
 
 <script>
-// ── Data ────────────────────────────────────────────────────────────────────
+// ── Data ─────────────────────────────────────────────────────────────────────
 
 const SUBJECTS = [
   {id:'bc', name:'Biochemie',          short:'BC',  color:'#D85A30',bg:'#FAECE7',tx:'#4A1B0C', examDate:'2026-08-21',openBook:false},
@@ -230,122 +265,149 @@ const TOPICS = [
 const S_MAP = Object.fromEntries(SUBJECTS.map(s=>[s.id,s]));
 const T_MAP = Object.fromEntries(TOPICS.map(t=>[t.id,t]));
 
-// ── State ───────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 
 let progress   = JSON.parse(localStorage.getItem('lt-p')||'{}');
 let motivation = JSON.parse(localStorage.getItem('lt-m')||'{}');
+let lastReview = JSON.parse(localStorage.getItem('lt-r')||'{}');
 let filter     = 'all';
+let expanded   = new Set();
 
-function saveP(){ localStorage.setItem('lt-p', JSON.stringify(progress)) }
-function saveM(){ localStorage.setItem('lt-m', JSON.stringify(motivation)) }
+function saveP(){ localStorage.setItem('lt-p',JSON.stringify(progress)) }
+function saveM(){ localStorage.setItem('lt-m',JSON.stringify(motivation)) }
+function saveR(){ localStorage.setItem('lt-r',JSON.stringify(lastReview)) }
 
-function getPct(id){ return (progress[id]||{}).pct || 0 }
-function getHrs(id){ return (progress[id]||{}).hrs || '' }
-function getMotiv(sid){ return motivation[sid] || 5 }
+function todayStr(){ return new Date().toISOString().split('T')[0] }
+function getPct(id){ return (progress[id]||{}).pct||0 }
+function getHrs(id){ return (progress[id]||{}).hrs||'' }
+function getMotiv(sid){ return motivation[sid]||5 }
+function isReviewTopic(t){ return !S_MAP[t.subj].openBook && getPct(t.id)>=60 }
+function reviewedToday(id){ return lastReview[id]===todayStr() }
 
-function setPct(id, v){
-  if(!progress[id]) progress[id]={pct:0,hrs:''};
-  progress[id].pct = v; saveP();
-}
-function setHrs(id, v){
-  if(!progress[id]) progress[id]={pct:0,hrs:''};
-  progress[id].hrs = v; saveP();
-}
+function setPct(id,v){if(!progress[id])progress[id]={pct:0,hrs:''};progress[id].pct=v;saveP()}
+function setHrs(id,v){if(!progress[id])progress[id]={pct:0,hrs:''};progress[id].hrs=v;saveP()}
 
-// ── Score ───────────────────────────────────────────────────────────────────
+// ── Score ─────────────────────────────────────────────────────────────────────
 
 function daysUntil(ds){
-  const exam = new Date(ds+'T12:00:00');
-  return Math.max(0, (exam - new Date()) / 86400000);
+  return Math.max(0,(new Date(ds+'T12:00:00')-new Date())/86400000);
 }
 
 function calcScore(t, pctOverride){
   const s = S_MAP[t.subj];
   const days  = daysUntil(s.examDate);
-  const pct   = pctOverride !== undefined ? pctOverride : getPct(t.id);
+  const pct   = pctOverride!==undefined ? pctOverride : getPct(t.id);
   const motiv = getMotiv(t.subj);
-  const urgency     = Math.max(0, Math.min(1, 1 - days/75));
-  const gap         = Math.max(0, 1 - pct/100);
-  const machbarkeit = pct < 80 ? 1.0 : 1.0 - ((pct-80)/20)*0.85;
-  const motivFactor = 0.5 + (motiv-1)/9*0.5;
-  const learnScore  = t.w * urgency * gap * machbarkeit * motivFactor;
-  // Auswendiglern-Fächer brauchen regelmäßige Wiederholung — auch bei hohem Fortschritt
-  const reviewScore = !s.openBook && pct > 0
-    ? (pct/100) * urgency * t.w * 0.25 * motivFactor
+  const urgency     = Math.max(0,Math.min(1,1-days/75));
+  const gap         = Math.max(0,1-pct/100);
+  const machbarkeit = pct<80 ? 1.0 : 1.0-((pct-80)/20)*0.85;
+  const motivFactor = 0.5+(motiv-1)/9*0.5;
+  const learnScore  = t.w*urgency*gap*machbarkeit*motivFactor;
+  // Review-Faktor: Auswendiglern-Fächer brauchen tägliche Wiederholung
+  // Sinkt auf 5% wenn heute bereits wiederholt
+  const revFactor   = reviewedToday(t.id) ? 0.05 : 1.0;
+  const reviewScore = !s.openBook&&pct>0
+    ? (pct/100)*urgency*t.w*0.3*motivFactor*revFactor
     : 0;
-  return learnScore + reviewScore;
+  return learnScore+reviewScore;
 }
 
 function scoreCol(score){
-  if(score > 2.0) return '#ff3b30';
-  if(score > 1.0) return '#ff9500';
-  if(score > 0.1) return '#34c759';
+  if(score>2.0) return '#ff3b30';
+  if(score>1.0) return '#ff9500';
+  if(score>0.1) return '#34c759';
   return '#aeaeb2';
 }
 
-// ── Slider fill helper ───────────────────────────────────────────────────────
-
-function fillRange(el, col){
-  const v = parseFloat(el.value), mn = parseFloat(el.min||0), mx = parseFloat(el.max||100);
-  const pct = (v-mn)/(mx-mn)*100;
-  el.style.background = `linear-gradient(to right,${col} ${pct}%,var(--bg3) ${pct}%)`;
+function fillRange(el,col){
+  const v=parseFloat(el.value),mn=parseFloat(el.min||0),mx=parseFloat(el.max||100);
+  const p=(v-mn)/(mx-mn)*100;
+  el.style.background=`linear-gradient(to right,${col} ${p}%,var(--bg3) ${p}%)`;
 }
 
-// ── Render ───────────────────────────────────────────────────────────────────
+// ── Render ────────────────────────────────────────────────────────────────────
 
 function renderHeader(){
-  document.getElementById('hdr-date').textContent =
+  document.getElementById('hdr-date').textContent=
     new Date().toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 }
 
 function renderExamBar(){
-  const sorted = [...SUBJECTS].sort((a,b)=>new Date(a.examDate)-new Date(b.examDate));
-  document.getElementById('exam-bar').innerHTML = sorted.map(s=>{
-    const d = Math.ceil(daysUntil(s.examDate));
-    const urgent = d <= 14;
-    return `<div class="exam-chip" style="background:${urgent?s.bg:'var(--bg2)'};color:${urgent?s.tx:'var(--txt2)'}">
+  const sorted=[...SUBJECTS].sort((a,b)=>new Date(a.examDate)-new Date(b.examDate));
+  document.getElementById('exam-bar').innerHTML=sorted.map(s=>{
+    const d=Math.ceil(daysUntil(s.examDate));
+    const urgent=d<=14;
+    return`<div class="exam-chip" style="background:${urgent?s.bg:'var(--bg2)'};color:${urgent?s.tx:'var(--txt2)'}">
       <span class="exam-days" style="color:${urgent?s.color:'var(--txt)'}">${d}</span>
       <span>${s.short}</span>
-      ${s.openBook?'<span style="font-size:8px;opacity:.7">📖</span>':''}
+      ${s.openBook?'<span style="font-size:8px;opacity:.6">📖</span>':''}
     </div>`;
   }).join('');
 }
 
-function renderRec(){
-  const top3 = TOPICS
-    .map(t=>({...t, score:calcScore(t)}))
-    .filter(t=>t.score>0.05)
+function renderDayCard(){
+  const today = todayStr();
+  // Review-Themen: !openBook, pct >= 60
+  const reviewItems = TOPICS
+    .filter(t=>isReviewTopic(t))
+    .map(t=>({...t,score:calcScore(t)}))
+    .sort((a,b)=>b.w-a.w||b.score-a.score);
+
+  const allDone = reviewItems.length>0 && reviewItems.every(t=>reviewedToday(t.id));
+
+  // Lern-Priorität: noch nicht auf Review-Niveau oder ungestartet
+  const learnItems = TOPICS
+    .map(t=>({...t,score:calcScore(t)}))
+    .filter(t=>!isReviewTopic(t)&&t.score>0.05)
     .sort((a,b)=>b.score-a.score)
     .slice(0,3);
 
-  if(!top3.length){
-    document.getElementById('rec-section').innerHTML =
-      `<div style="text-align:center;padding:24px;color:var(--txt2);font-size:14px;background:var(--bg2);border-radius:var(--r);margin-bottom:14px">Alle Themen auf Kurs 🎉</div>`;
-    return;
-  }
-  document.getElementById('rec-section').innerHTML = `<div class="rec-card">
-    <div class="rec-title">📚 Heute lernen</div>
-    ${top3.map((t,i)=>{
-      const s = S_MAP[t.subj];
-      const col = scoreCol(t.score);
-      return `<div class="rec-item">
-        <div class="rec-rank">#${i+1}</div>
-        <div class="rec-body">
-          <div class="rec-name">${getPct(t.id)>=70&&!s.openBook?'🔄 ':''} ${t.name}</div>
-          <div class="rec-meta">${s.short} · ${t.grp} · ${Math.ceil(daysUntil(s.examDate))}d</div>
-        </div>
-        <div class="rec-score" style="color:${col}">${t.score.toFixed(1)}</div>
-      </div>`;
-    }).join('')}
+  const reviewHtml = reviewItems.length===0
+    ? `<div class="all-done-msg">Keine Themen zur Wiederholung</div>`
+    : allDone
+      ? `<div class="all-done-msg">✓ Alle für heute wiederholt</div>`
+      : reviewItems.map(t=>{
+          const s=S_MAP[t.subj];
+          const done=reviewedToday(t.id);
+          return`<button class="rev-chip${done?' done':''}"
+            style="border-color:${s.color};color:${done?'rgba(255,255,255,.4)':'#fff'}"
+            onclick="markReview('${t.id}')">
+            <span class="rev-chip-check">${done?'✓':'○'}</span>
+            <span style="background:${s.bg};color:${s.tx};padding:1px 5px;border-radius:3px;font-size:9px">${s.short}</span>
+            <span>${t.name}</span>
+          </button>`;
+        }).join('');
+
+  const learnHtml = learnItems.length===0
+    ? `<div class="all-done-msg">Alle Themen auf Kurs 🎉</div>`
+    : learnItems.map((t,i)=>{
+        const s=S_MAP[t.subj];
+        const col=scoreCol(t.score);
+        return`<div class="learn-item">
+          <div class="learn-rank">#${i+1}</div>
+          <div class="learn-body">
+            <div class="learn-name">${t.name}</div>
+            <div class="learn-meta">${s.short} · ${t.grp} · ${Math.ceil(daysUntil(s.examDate))}d</div>
+          </div>
+          <div class="learn-score" style="color:${col}">${t.score.toFixed(1)}</div>
+        </div>`;
+      }).join('');
+
+  document.getElementById('day-card').innerHTML=`<div class="day-card">
+    <div class="day-section-title">🔄 Heute wiederholen</div>
+    <div class="review-chips">${reviewHtml}</div>
+    <div class="day-divider"></div>
+    <div class="day-section-title">📚 Neu lernen</div>
+    ${learnHtml}
   </div>`;
 }
 
 function renderFilterBar(){
-  const chips = [{id:'all',label:'Alle',color:'#1c1c1e',bg:'#1c1c1e'}, ...SUBJECTS];
-  document.getElementById('filter-bar').innerHTML = chips.map(f=>{
-    const active = filter===f.id;
-    const col = f.id==='all' ? 'var(--txt)' : f.color;
-    return `<button class="fchip" onclick="setFilter('${f.id}')"
+  const chips=[{id:'all',label:'Alle'},...SUBJECTS];
+  document.getElementById('filter-bar').innerHTML=chips.map(f=>{
+    const active=filter===f.id;
+    const col=f.id==='all'?'var(--txt)':S_MAP[f.id].color;
+    return`<button class="fchip" onclick="setFilter('${f.id}')"
       style="${active?`background:${col};color:#fff;border-color:${col}`:''}">
       ${f.id==='all'?f.label:f.short}
     </button>`;
@@ -353,71 +415,80 @@ function renderFilterBar(){
 }
 
 function renderTopicList(){
-  const list = (filter==='all' ? TOPICS : TOPICS.filter(t=>t.subj===filter))
-    .map(t=>({...t, score:calcScore(t)}))
+  const list=(filter==='all'?TOPICS:TOPICS.filter(t=>t.subj===filter))
+    .map(t=>({...t,score:calcScore(t)}))
     .sort((a,b)=>b.score-a.score);
 
-  const maxScore = Math.max(...list.map(t=>t.score), 0.01);
+  const maxScore=Math.max(...list.map(t=>t.score),0.01);
 
-  document.getElementById('topic-list').innerHTML = list.map((t,i)=>{
-    const s   = S_MAP[t.subj];
-    const pct = getPct(t.id);
-    const hrs = getHrs(t.id);
-    const col = scoreCol(t.score);
-    const barW = Math.round(t.score/maxScore*100);
-    const wDots = Array.from({length:5},(_,di)=>
+  document.getElementById('topic-list').innerHTML=list.map((t,i)=>{
+    const s  =S_MAP[t.subj];
+    const pct=getPct(t.id);
+    const hrs=getHrs(t.id);
+    const col=scoreCol(t.score);
+    const isRev=isReviewTopic(t);
+    const done=reviewedToday(t.id);
+    const isExp=expanded.has(t.id);
+    const wDots=Array.from({length:5},(_,di)=>
       `<div class="w-dot" style="background:${di<t.w?s.color:'var(--bg3)'}"></div>`).join('');
-    const sliderBg = `linear-gradient(to right,${col} ${pct}%,var(--bg3) ${pct}%)`;
+    const sliderBg=`linear-gradient(to right,${col} ${pct}%,var(--bg3) ${pct}%)`;
 
-    return `<div class="topic-card" id="tc-${t.id}">
-      <div class="tc-top">
-        <span style="font-size:10px;font-weight:700;color:var(--txt3);min-width:20px;margin-top:3px">#${i+1}</span>
-        <span class="badge" style="background:${s.bg};color:${s.tx}">${s.short}</span>
-        <div class="tc-info">
-          <div class="tc-name">${t.name}</div>
-          <div class="tc-sub">
-            <span class="tc-grp">${t.grp}</span>
-            ${s.openBook?'<span class="ob-tag">📖 Offen</span>':''}
-            ${!s.openBook&&pct>=70?'<span class="ob-tag rev-tag">🔄 Review</span>':''}
-            <div class="w-dots">${wDots}</div>
-          </div>
-        </div>
-        <div class="score-pill" style="background:${col}22;color:${col}">${t.score.toFixed(2)}</div>
-      </div>
-      <div class="score-bar-wrap"><div class="score-bar" style="width:${barW}%;background:${col}"></div></div>
-      <div class="tc-controls">
-        <div class="ctrl">
-          <div class="ctrl-row">
-            <span class="ctrl-label">Fortschritt</span>
-            <span class="ctrl-val" id="pv-${t.id}">${pct}%</span>
-          </div>
-          <input type="range" min="0" max="100" step="5" value="${pct}"
-            style="background:${sliderBg}"
-            oninput="livePct('${t.id}',this)"
-            onchange="savePct('${t.id}',this.value)">
-        </div>
-        <div class="h-wrap">
-          <span class="ctrl-label" style="text-align:center">Stunden</span>
-          <input type="number" class="h-input" min="0" max="999" step="0.5"
-            value="${hrs}" placeholder="0"
-            onchange="saveHrs('${t.id}',this.value)">
+    return`<div class="t-row" id="tr-${t.id}" onclick="toggleExpand('${t.id}')">
+      <div class="t-row-main">
+        <span class="t-rank">${i+1}</span>
+        <span class="t-badge" style="background:${s.bg};color:${s.tx}">${s.short}</span>
+        <span class="t-name">${t.name}</span>
+        <div class="t-right">
+          ${isRev?`<button class="chk-btn${done?' done':''}"
+            style="border-color:${done?'#34c759':s.color};color:${done?'#fff':s.color}"
+            onclick="event.stopPropagation();markReview('${t.id}')">${done?'✓':'○'}</button>`:''}
+          <span class="t-pct" style="color:${col}">${pct}%</span>
+          <span class="t-score" style="color:${col}">${t.score.toFixed(1)}</span>
         </div>
       </div>
+      <div class="t-bar-wrap"><div class="t-bar" style="width:${Math.round(t.score/maxScore*100)}%;background:${col}"></div></div>
+      ${isExp?`<div class="t-expand" onclick="event.stopPropagation()">
+        <div class="t-expand-meta">
+          <span class="meta-tag" style="background:${s.bg};color:${s.tx}">${t.grp}</span>
+          ${s.openBook?'<span class="meta-tag ob-tag">📖 Open Book</span>':''}
+          ${isRev?'<span class="meta-tag rev-tag">🔄 Review</span>':''}
+          <div class="w-dots">${wDots}</div>
+        </div>
+        <div class="t-ctrl-row">
+          <div class="ctrl">
+            <div class="ctrl-hdr">
+              <span class="ctrl-lbl">Fortschritt</span>
+              <span class="ctrl-val" id="pv-${t.id}">${pct}%</span>
+            </div>
+            <input type="range" min="0" max="100" step="5" value="${pct}"
+              style="background:${sliderBg}"
+              oninput="livePct('${t.id}',this)"
+              onchange="savePct('${t.id}',this.value)">
+          </div>
+          <div class="h-wrap">
+            <span class="ctrl-lbl">Std.</span>
+            <input type="number" class="h-input" min="0" max="999" step="0.5"
+              value="${hrs}" placeholder="0"
+              onchange="saveHrs('${t.id}',this.value)">
+          </div>
+        </div>
+        ${isRev?`<div class="review-hint">Tägliche Wiederholung empfohlen (BC/OC/IC ohne Hilfsmittel)</div>`:''}
+      </div>`:''}
     </div>`;
   }).join('');
 }
 
 function renderMotivModal(){
-  document.getElementById('motiv-content').innerHTML = SUBJECTS.map(s=>{
-    const m   = getMotiv(s.id);
-    const d   = Math.ceil(daysUntil(s.examDate));
-    const date= new Date(s.examDate+'T12:00:00').toLocaleDateString('de-CH',{day:'numeric',month:'short'});
-    const bg  = `linear-gradient(to right,${s.color} ${(m-1)/9*100}%,var(--bg3) ${(m-1)/9*100}%)`;
-    return `<div class="motiv-row">
+  document.getElementById('motiv-content').innerHTML=SUBJECTS.map(s=>{
+    const m=getMotiv(s.id);
+    const d=Math.ceil(daysUntil(s.examDate));
+    const date=new Date(s.examDate+'T12:00:00').toLocaleDateString('de-CH',{day:'numeric',month:'short'});
+    const bg=`linear-gradient(to right,${s.color} ${(m-1)/9*100}%,var(--bg3) ${(m-1)/9*100}%)`;
+    return`<div class="motiv-row">
       <div class="motiv-top">
         <div>
           <div class="motiv-name">${s.name}</div>
-          <div class="motiv-info">${date} · noch ${d} Tage${s.openBook?' · 📖 Open Book':''}</div>
+          <div class="motiv-info">${date} · ${d} Tage${s.openBook?' · 📖 Open Book':''}</div>
         </div>
         <div class="motiv-val" style="color:${s.color}" id="mv-${s.id}">${m}</div>
       </div>
@@ -432,65 +503,62 @@ function renderMotivModal(){
   }).join('');
 }
 
-// ── Actions ──────────────────────────────────────────────────────────────────
+// ── Actions ───────────────────────────────────────────────────────────────────
 
-function setFilter(id){
-  filter = id;
-  renderFilterBar();
+function setFilter(id){ filter=id; renderFilterBar(); renderTopicList(); }
+
+function toggleExpand(id){
+  expanded.has(id)?expanded.delete(id):expanded.add(id);
   renderTopicList();
 }
 
-function livePct(id, el){
-  const v = parseInt(el.value);
-  const col = scoreCol(calcScore(T_MAP[id], v));
-  fillRange(el, col);
-  const pv = document.getElementById('pv-'+id);
-  if(pv) pv.textContent = v+'%';
-}
-
-function savePct(id, val){
-  setPct(id, parseInt(val));
-  renderRec();
+function markReview(id){
+  const td=todayStr();
+  lastReview[id]=reviewedToday(id)?null:td; // toggle
+  if(!lastReview[id]) delete lastReview[id];
+  saveR();
+  renderDayCard();
   renderTopicList();
 }
 
-function saveHrs(id, val){
-  setHrs(id, parseFloat(val)||'');
+function livePct(id,el){
+  const v=parseInt(el.value);
+  const col=scoreCol(calcScore(T_MAP[id],v));
+  fillRange(el,col);
+  const pv=document.getElementById('pv-'+id);
+  if(pv) pv.textContent=v+'%';
 }
 
-function liveMotiv(sid, el){
-  fillRange(el, S_MAP[sid].color);
-  const mv = document.getElementById('mv-'+sid);
-  if(mv) mv.textContent = el.value;
-}
-
-function saveMotiv(sid, val){
-  motivation[sid] = parseInt(val); saveM();
-  renderRec();
+function savePct(id,val){
+  setPct(id,parseInt(val));
+  renderDayCard();
   renderTopicList();
 }
 
-function openModal(){
-  renderMotivModal();
-  document.getElementById('modal-bg').classList.add('open');
-  document.body.style.overflow = 'hidden';
+function saveHrs(id,val){ setHrs(id,parseFloat(val)||'') }
+
+function liveMotiv(sid,el){
+  fillRange(el,S_MAP[sid].color);
+  const mv=document.getElementById('mv-'+sid);
+  if(mv) mv.textContent=el.value;
 }
 
-function closeModal(){
-  document.getElementById('modal-bg').classList.remove('open');
-  document.body.style.overflow = '';
+function saveMotiv(sid,val){
+  motivation[sid]=parseInt(val);saveM();
+  renderDayCard();
+  renderTopicList();
 }
 
-function bgClick(e){
-  if(e.target === document.getElementById('modal-bg')) closeModal();
-}
+function openModal(){ renderMotivModal(); document.getElementById('modal-bg').classList.add('open'); document.body.style.overflow='hidden'; }
+function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); document.body.style.overflow=''; }
+function bgClick(e){ if(e.target===document.getElementById('modal-bg')) closeModal(); }
 
-// ── Init ─────────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 function init(){
   renderHeader();
   renderExamBar();
-  renderRec();
+  renderDayCard();
   renderFilterBar();
   renderTopicList();
 }
