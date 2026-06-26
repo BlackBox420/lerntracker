@@ -61,6 +61,8 @@ input,button{font-family:inherit;font-size:inherit}
 .tc-grp{font-size:9px;color:var(--txt3)}
 .ob-tag{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;background:#d1fae5;color:#065f46}
 @media(prefers-color-scheme:dark){.ob-tag{background:#064e3b;color:#6ee7b7}}
+.rev-tag{background:#dbeafe;color:#1e40af}
+@media(prefers-color-scheme:dark){.rev-tag{background:#1e3a5f;color:#93c5fd}}
 .w-dots{display:flex;gap:2px}
 .w-dot{width:5px;height:5px;border-radius:50%}
 .score-pill{flex-shrink:0;padding:3px 7px;border-radius:8px;font-size:11px;font-weight:700}
@@ -376,7 +378,7 @@ function renderTopicList(){
           <div class="tc-sub">
             <span class="tc-grp">${t.grp}</span>
             ${s.openBook?'<span class="ob-tag">📖 Offen</span>':''}
-            ${!s.openBook&&pct>=70?'<span class="ob-tag" style="background:#dbeafe;color:#1e40af">🔄 Review</span>':''}
+            ${!s.openBook&&pct>=70?'<span class="ob-tag rev-tag">🔄 Review</span>':''}
             <div class="w-dots">${wDots}</div>
           </div>
         </div>
