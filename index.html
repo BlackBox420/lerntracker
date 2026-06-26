@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1c1c1e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Lernplan">
+<link rel="manifest" href="manifest.json">
+<title>ETH Lernplan 2026</title>
+<style>
+:root {
+  --bg:#fff;--bg2:#f2f2f7;--bg3:#e5e5ea;
+  --txt:#1c1c1e;--txt2:#6c6c70;--txt3:#aeaeb2;
+  --border:rgba(0,0,0,.1);--r:12px;--r2:8px;
+  --font:-apple-system,'SF Pro Text','Helvetica Neue',sans-serif;
+}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#1c1c1e;--bg2:#2c2c2e;--bg3:#3a3a3c;--txt:#f2f2f7;--txt2:#aeaeb2;--txt3:#636366;--border:rgba(255,255,255,.1)}
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:var(--font);background:var(--bg);color:var(--txt);display:flex;flex-direction:column;max-width:480px;margin:0 auto}
+input,button{font-family:inherit;font-size:inherit}
+
+.hdr{position:sticky;top:0;z-index:50;padding:12px 16px 10px;background:var(--bg);border-bottom:.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.hdr-title{font-size:17px;font-weight:700}
+.hdr-date{font-size:12px;color:var(--txt2)}
+.gear-btn{background:var(--bg2);border:none;cursor:pointer;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+
+.content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 16px 40px}
+
+.exam-bar{display:flex;gap:8px;overflow-x:auto;margin-bottom:14px;scrollbar-width:none}
+.exam-bar::-webkit-scrollbar{display:none}
+.exam-chip{flex-shrink:0;border-radius:10px;padding:7px 12px;font-size:10px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:48px}
+.exam-days{font-size:18px;font-weight:800;line-height:1}
+
+.rec-card{border-radius:var(--r);padding:14px;margin-bottom:14px;background:#16213e}
+.rec-title{font-size:10px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px}
+.rec-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid rgba(255,255,255,.08)}
+.rec-item:last-child{border-bottom:none;padding-bottom:0}
+.rec-rank{font-size:11px;font-weight:700;color:rgba(255,255,255,.3);width:18px;flex-shrink:0}
+.rec-body{flex:1;min-width:0}
+.rec-name{font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rec-meta{font-size:10px;color:rgba(255,255,255,.4);margin-top:2px}
+.rec-score{font-size:15px;font-weight:700;flex-shrink:0}
+
+.filter-bar{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none}
+.filter-bar::-webkit-scrollbar{display:none}
+.fchip{flex-shrink:0;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid var(--border);background:var(--bg2);color:var(--txt2);cursor:pointer;transition:all .15s}
+
+.sec-hdr{font-size:12px;font-weight:700;color:var(--txt3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+
+.topic-card{background:var(--bg2);border-radius:var(--r2);padding:10px 12px;margin-bottom:7px}
+.tc-top{display:flex;align-items:flex-start;gap:8px;margin-bottom:7px}
+.badge{border-radius:5px;padding:2px 7px;font-size:10px;font-weight:700;flex-shrink:0;margin-top:1px}
+.tc-info{flex:1;min-width:0}
+.tc-name{font-size:13px;font-weight:500;line-height:1.3}
+.tc-sub{display:flex;align-items:center;gap:5px;margin-top:3px;flex-wrap:wrap}
+.tc-grp{font-size:9px;color:var(--txt3)}
+.ob-tag{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;background:#d1fae5;color:#065f46}
+@media(prefers-color-scheme:dark){.ob-tag{background:#064e3b;color:#6ee7b7}}
+.w-dots{display:flex;gap:2px}
+.w-dot{width:5px;height:5px;border-radius:50%}
+.score-pill{flex-shrink:0;padding:3px 7px;border-radius:8px;font-size:11px;font-weight:700}
+
+.score-bar-wrap{height:3px;border-radius:2px;overflow:hidden;background:var(--bg3);margin-bottom:8px}
+.score-bar{height:100%;border-radius:2px;transition:width .4s}
+
+.tc-controls{display:flex;gap:10px;align-items:flex-end}
+.ctrl{flex:1;display:flex;flex-direction:column;gap:3px}
+.ctrl-row{display:flex;justify-content:space-between;align-items:center}
+.ctrl-label{font-size:9px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px}
+.ctrl-val{font-size:11px;color:var(--txt2);font-variant-numeric:tabular-nums}
+
+input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;width:100%;cursor:pointer;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.3);cursor:pointer;transition:transform .1s}
+input[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}
+input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.3);border:none;cursor:pointer}
+
+.h-wrap{flex:0 0 60px;display:flex;flex-direction:column;gap:3px}
+.h-input{background:var(--bg3);border:none;border-radius:6px;padding:6px 4px;width:100%;font-size:13px;color:var(--txt);text-align:center;-moz-appearance:textfield}
+.h-input::-webkit-inner-spin-button,.h-input::-webkit-outer-spin-button{-webkit-appearance:none}
+.h-input:focus{outline:2px solid #007aff;outline-offset:-2px;border-radius:6px}
+
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .2s}
+.modal-bg.open{opacity:1;pointer-events:all}
+.modal{background:var(--bg);border-radius:20px 20px 0 0;padding:20px 16px calc(24px + env(safe-area-inset-bottom));width:100%;max-height:82vh;overflow-y:auto;transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);position:relative}
+.modal-bg.open .modal{transform:translateY(0)}
+.modal-title{font-size:16px;font-weight:700;text-align:center;margin-bottom:4px}
+.modal-sub{font-size:12px;color:var(--txt2);text-align:center;margin-bottom:16px}
+.modal-close{position:absolute;top:16px;right:16px;background:var(--bg2);border:none;cursor:pointer;width:28px;height:28px;border-radius:50%;font-size:14px;color:var(--txt2);display:flex;align-items:center;justify-content:center}
+
+.motiv-row{padding:14px 0;border-bottom:.5px solid var(--border)}
+.motiv-row:last-child{border-bottom:none}
+.motiv-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.motiv-name{font-size:14px;font-weight:600}
+.motiv-info{font-size:11px;color:var(--txt2);margin-top:2px}
+.motiv-val{font-size:24px;font-weight:800;line-height:1}
+
+input[type=range].big::-webkit-slider-thumb{width:26px;height:26px}
+input[type=range].big::-moz-range-thumb{width:26px;height:26px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <div class="hdr-title">ETH Lernplan 2026</div>
+    <div class="hdr-date" id="hdr-date"></div>
+  </div>
+  <button class="gear-btn" onclick="openModal()" title="Motivation">⚙</button>
+</div>
+
+<div class="content">
+  <div class="exam-bar" id="exam-bar"></div>
+  <div id="rec-section"></div>
+  <div class="filter-bar" id="filter-bar"></div>
+  <div class="sec-hdr">Prioritätsliste</div>
+  <div id="topic-list"></div>
+</div>
+
+<div class="modal-bg" id="modal-bg" onclick="bgClick(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-title">Motivation</div>
+    <div class="modal-sub">Beeinflusst den Prioritäts-Score aller Themen</div>
+    <div id="motiv-content"></div>
+  </div>
+</div>
+
+<script>
+// ── Data ────────────────────────────────────────────────────────────────────
+
+const SUBJECTS = [
+  {id:'bc', name:'Biochemie',          short:'BC',  color:'#D85A30',bg:'#FAECE7',tx:'#4A1B0C', examDate:'2026-08-21',openBook:false},
+  {id:'oc', name:'Org. Chemie',        short:'OC',  color:'#EF9F27',bg:'#FAEEDA',tx:'#412402', examDate:'2026-08-07',openBook:false},
+  {id:'ic', name:'Inorg. Chem. II',    short:'IC',  color:'#7F77DD',bg:'#EEEDFE',tx:'#26215C', examDate:'2026-08-19',openBook:false},
+  {id:'ciw',name:'Chemieingenieurwiss.',short:'CIW',color:'#1D9E75',bg:'#E1F5EE',tx:'#04342C', examDate:'2026-08-14',openBook:true},
+  {id:'ac', name:'Analytische Chemie', short:'AC',  color:'#185FA5',bg:'#E6F1FB',tx:'#042C53', examDate:'2026-08-03',openBook:true},
+  {id:'pc', name:'PC III: Quantenmech.',short:'PC', color:'#BA7517',bg:'#FFF3DC',tx:'#412402', examDate:'2026-08-10',openBook:true},
+];
+
+const TOPICS = [
+  // BC
+  {id:'bc_0', subj:'bc',name:'TCA/Citratzyklus',           w:5,grp:'Locher'},
+  {id:'bc_1', subj:'bc',name:'Glykolyse',                  w:5,grp:'Locher'},
+  {id:'bc_2', subj:'bc',name:'ATP-Synthase',                w:5,grp:'Locher'},
+  {id:'bc_3', subj:'bc',name:'KDiss + Hill-Gleichung',      w:5,grp:'Glockshuber'},
+  {id:'bc_4', subj:'bc',name:'Chymotrypsin-Mechanismus',    w:5,grp:'Glockshuber'},
+  {id:'bc_5', subj:'bc',name:'Wahr/Falsch Kinetik',         w:5,grp:'Glockshuber'},
+  {id:'bc_6', subj:'bc',name:'Glykogen',                    w:5,grp:'Weber-Ban'},
+  {id:'bc_7', subj:'bc',name:'Fettsäuren β-Oxidation',      w:5,grp:'Weber-Ban'},
+  {id:'bc_8', subj:'bc',name:'PLP/Transaminierung',         w:5,grp:'Weber-Ban'},
+  {id:'bc_9', subj:'bc',name:'FAS + PKS-Domänen',           w:5,grp:'Piel'},
+  {id:'bc_10',subj:'bc',name:'DNA-Replikation',             w:5,grp:'Ban'},
+  {id:'bc_11',subj:'bc',name:'Transkription',               w:5,grp:'Ban'},
+  {id:'bc_12',subj:'bc',name:'Translation',                 w:5,grp:'Ban'},
+  {id:'bc_13',subj:'bc',name:'Pentosephosphatweg',          w:3,grp:'Locher'},
+  {id:'bc_14',subj:'bc',name:'Atmungskette',                w:3,grp:'Locher'},
+  {id:'bc_15',subj:'bc',name:'Aminosäureabbau',             w:4,grp:'Weber-Ban'},
+  {id:'bc_16',subj:'bc',name:'Ubiquitin/Proteasom',         w:3,grp:'Weber-Ban'},
+  {id:'bc_17',subj:'bc',name:'Ketonkörper',                 w:3,grp:'Weber-Ban'},
+  {id:'bc_18',subj:'bc',name:'Terpene/Isoprenoide',         w:4,grp:'Piel'},
+  {id:'bc_19',subj:'bc',name:'DNA-Struktur',                w:4,grp:'Ban'},
+  {id:'bc_20',subj:'bc',name:'tRNA/Aminoacyl-Synthetase',   w:4,grp:'Ban'},
+  {id:'bc_21',subj:'bc',name:'Wobble/Inosin',               w:4,grp:'Ban'},
+  {id:'bc_22',subj:'bc',name:'Kinetik kon/koff',            w:4,grp:'Glockshuber'},
+  {id:'bc_23',subj:'bc',name:'Allosterie R/T',              w:3,grp:'Glockshuber'},
+  // OC I
+  {id:'oci_0', subj:'oc',name:'Carbonyl-Reaktivität/Ordering',   w:5,grp:'OC I'},
+  {id:'oci_1', subj:'oc',name:'Acetal/Hemiacetal',                w:5,grp:'OC I'},
+  {id:'oci_2', subj:'oc',name:'Reaktionskästchen',                w:5,grp:'OC I'},
+  {id:'oci_3', subj:'oc',name:'Aldol/Claisen-Mechanismen',        w:5,grp:'OC I'},
+  {id:'oci_4', subj:'oc',name:'Reaktionsbedingungen',             w:5,grp:'OC I'},
+  {id:'oci_5', subj:'oc',name:'Hydratbildung/Gleichgewicht',      w:4,grp:'OC I'},
+  {id:'oci_6', subj:'oc',name:'Grignard-Reaktionen',              w:4,grp:'OC I'},
+  {id:'oci_7', subj:'oc',name:'Alkohol-Oxidation (Swern/PCC)',    w:4,grp:'OC I'},
+  {id:'oci_8', subj:'oc',name:'Weinreb-Amid',                     w:4,grp:'OC I'},
+  {id:'oci_9', subj:'oc',name:'Enamin/Iminbildung',               w:4,grp:'OC I'},
+  {id:'oci_10',subj:'oc',name:'Carbonsäurederivate/IR',           w:4,grp:'OC I'},
+  {id:'oci_11',subj:'oc',name:'Mehrstufige Synthese',             w:4,grp:'OC I'},
+  {id:'oci_12',subj:'oc',name:'Knoevenagel/Michael',              w:3,grp:'OC I'},
+  {id:'oci_13',subj:'oc',name:'Schutzgruppen',                    w:3,grp:'OC I'},
+  {id:'oci_14',subj:'oc',name:'Reduktive Aminierung',             w:3,grp:'OC I'},
+  {id:'oci_15',subj:'oc',name:'Retrosynthese',                    w:2,grp:'OC I'},
+  // OC II
+  {id:'ocii_0', subj:'oc',name:'FMO + Regioselektivität + ÜZ',       w:5,grp:'OC II'},
+  {id:'ocii_1', subj:'oc',name:'Diazo-Chemie (Wolff/Bestmann-Ohira)',w:5,grp:'OC II'},
+  {id:'ocii_2', subj:'oc',name:'Pd-katalytischer Zyklus',            w:5,grp:'OC II'},
+  {id:'ocii_3', subj:'oc',name:'HWE/Wittig',                         w:5,grp:'OC II'},
+  {id:'ocii_4', subj:'oc',name:'Diels-Alder',                        w:5,grp:'OC II'},
+  {id:'ocii_5', subj:'oc',name:'Barton-McCombie',                    w:4,grp:'OC II'},
+  {id:'ocii_6', subj:'oc',name:'Mukaiyama-Aktivierung',              w:4,grp:'OC II'},
+  {id:'ocii_7', subj:'oc',name:'Corey-Chaykovsky',                   w:4,grp:'OC II'},
+  {id:'ocii_8', subj:'oc',name:'Schutzgruppen (TBS/Cbz/Boc)',        w:4,grp:'OC II'},
+  {id:'ocii_9', subj:'oc',name:'Appel-Reaktion',                     w:4,grp:'OC II'},
+  {id:'ocii_10',subj:'oc',name:'Synthese (2 von 3)',                  w:3,grp:'OC II'},
+  {id:'ocii_11',subj:'oc',name:'Elektrozyklisch',                    w:3,grp:'OC II'},
+  {id:'ocii_12',subj:'oc',name:'Grubbs-Metathese',                   w:3,grp:'OC II'},
+  {id:'ocii_13',subj:'oc',name:'Grignard 1,2/1,4/Weinreb',           w:3,grp:'OC II'},
+  {id:'ocii_14',subj:'oc',name:'Corey-Fuchs',                        w:3,grp:'OC II'},
+  // IC
+  {id:'ic_0',subj:'ic',name:'Kristallstrukturen (auswendig)',      w:5,grp:'IC II'},
+  {id:'ic_1',subj:'ic',name:'Phasendiagramme + Invariant Points', w:5,grp:'IC II'},
+  {id:'ic_2',subj:'ic',name:'Elektrische Eigenschaften',           w:4,grp:'IC II'},
+  {id:'ic_3',subj:'ic',name:'Thermische Eigenschaften',            w:3,grp:'IC II'},
+  {id:'ic_4',subj:'ic',name:'Analysemethoden',                     w:2,grp:'IC II'},
+  {id:'ic_5',subj:'ic',name:'Synthesemethoden (shake & bake)',     w:1,grp:'IC II'},
+  // CIW
+  {id:'ciw_0',subj:'ciw',name:'Wärmetransport',              w:5,grp:'CIW'},
+  {id:'ciw_1',subj:'ciw',name:'Ideale Reaktoren (PFR/CSTR)', w:5,grp:'CIW'},
+  {id:'ciw_2',subj:'ciw',name:'Separation',                   w:4,grp:'CIW'},
+  {id:'ciw_3',subj:'ciw',name:'Stofftransport',               w:4,grp:'CIW'},
+  {id:'ciw_4',subj:'ciw',name:'Katalyse',                     w:3,grp:'CIW'},
+  // AC
+  {id:'ac_0',subj:'ac',name:'NMR/IR/MS Strukturanalytik',     w:5,grp:'AC'},
+  {id:'ac_1',subj:'ac',name:'Trennmethoden/Chromatographie',  w:3,grp:'AC'},
+  {id:'ac_2',subj:'ac',name:'Elementanalytik + XRF',          w:3,grp:'AC'},
+  // PC
+  {id:'pc_0',subj:'pc',name:'Operatoren & Kommutatoren',       w:3,grp:'PC III'},
+  {id:'pc_1',subj:'pc',name:'Drehimpuls, Spin & Termsymbole',  w:3,grp:'PC III'},
+  {id:'pc_2',subj:'pc',name:'Schrödinger & Wellenfunktionen',  w:3,grp:'PC III'},
+  {id:'pc_3',subj:'pc',name:'Hyperfein & Zeeman-Effekt',       w:3,grp:'PC III'},
+];
+
+const S_MAP = Object.fromEntries(SUBJECTS.map(s=>[s.id,s]));
+const T_MAP = Object.fromEntries(TOPICS.map(t=>[t.id,t]));
+
+// ── State ───────────────────────────────────────────────────────────────────
+
+let progress   = JSON.parse(localStorage.getItem('lt-p')||'{}');
+let motivation = JSON.parse(localStorage.getItem('lt-m')||'{}');
+let filter     = 'all';
+
+function saveP(){ localStorage.setItem('lt-p', JSON.stringify(progress)) }
+function saveM(){ localStorage.setItem('lt-m', JSON.stringify(motivation)) }
+
+function getPct(id){ return (progress[id]||{}).pct || 0 }
+function getHrs(id){ return (progress[id]||{}).hrs || '' }
+function getMotiv(sid){ return motivation[sid] || 5 }
+
+function setPct(id, v){
+  if(!progress[id]) progress[id]={pct:0,hrs:''};
+  progress[id].pct = v; saveP();
+}
+function setHrs(id, v){
+  if(!progress[id]) progress[id]={pct:0,hrs:''};
+  progress[id].hrs = v; saveP();
+}
+
+// ── Score ───────────────────────────────────────────────────────────────────
+
+function daysUntil(ds){
+  const exam = new Date(ds+'T12:00:00');
+  return Math.max(0, (exam - new Date()) / 86400000);
+}
+
+function calcScore(t, pctOverride){
+  const s = S_MAP[t.subj];
+  const days  = daysUntil(s.examDate);
+  const pct   = pctOverride !== undefined ? pctOverride : getPct(t.id);
+  const motiv = getMotiv(t.subj);
+  const urgency     = Math.max(0, Math.min(1, 1 - days/75));
+  const gap         = Math.max(0, 1 - pct/100);
+  const machbarkeit = pct < 80 ? 1.0 : 1.0 - ((pct-80)/20)*0.85;
+  const motivFactor = 0.5 + (motiv-1)/9*0.5;
+  return t.w * urgency * gap * machbarkeit * motivFactor;
+}
+
+function scoreCol(score){
+  if(score > 2.0) return '#ff3b30';
+  if(score > 1.0) return '#ff9500';
+  if(score > 0.1) return '#34c759';
+  return '#aeaeb2';
+}
+
+// ── Slider fill helper ───────────────────────────────────────────────────────
+
+function fillRange(el, col){
+  const v = parseFloat(el.value), mn = parseFloat(el.min||0), mx = parseFloat(el.max||100);
+  const pct = (v-mn)/(mx-mn)*100;
+  el.style.background = `linear-gradient(to right,${col} ${pct}%,var(--bg3) ${pct}%)`;
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+
+function renderHeader(){
+  document.getElementById('hdr-date').textContent =
+    new Date().toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+}
+
+function renderExamBar(){
+  const sorted = [...SUBJECTS].sort((a,b)=>new Date(a.examDate)-new Date(b.examDate));
+  document.getElementById('exam-bar').innerHTML = sorted.map(s=>{
+    const d = Math.ceil(daysUntil(s.examDate));
+    const urgent = d <= 14;
+    return `<div class="exam-chip" style="background:${urgent?s.bg:'var(--bg2)'};color:${urgent?s.tx:'var(--txt2)'}">
+      <span class="exam-days" style="color:${urgent?s.color:'var(--txt)'}">${d}</span>
+      <span>${s.short}</span>
+      ${s.openBook?'<span style="font-size:8px;opacity:.7">📖</span>':''}
+    </div>`;
+  }).join('');
+}
+
+function renderRec(){
+  const top3 = TOPICS
+    .map(t=>({...t, score:calcScore(t)}))
+    .filter(t=>t.score>0.05)
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,3);
+
+  if(!top3.length){
+    document.getElementById('rec-section').innerHTML =
+      `<div style="text-align:center;padding:24px;color:var(--txt2);font-size:14px;background:var(--bg2);border-radius:var(--r);margin-bottom:14px">Alle Themen auf Kurs 🎉</div>`;
+    return;
+  }
+  document.getElementById('rec-section').innerHTML = `<div class="rec-card">
+    <div class="rec-title">📚 Heute lernen</div>
+    ${top3.map((t,i)=>{
+      const s = S_MAP[t.subj];
+      const col = scoreCol(t.score);
+      return `<div class="rec-item">
+        <div class="rec-rank">#${i+1}</div>
+        <div class="rec-body">
+          <div class="rec-name">${t.name}</div>
+          <div class="rec-meta">${s.short} · ${t.grp} · ${Math.ceil(daysUntil(s.examDate))}d</div>
+        </div>
+        <div class="rec-score" style="color:${col}">${t.score.toFixed(1)}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function renderFilterBar(){
+  const chips = [{id:'all',label:'Alle',color:'#1c1c1e',bg:'#1c1c1e'}, ...SUBJECTS];
+  document.getElementById('filter-bar').innerHTML = chips.map(f=>{
+    const active = filter===f.id;
+    const col = f.id==='all' ? 'var(--txt)' : f.color;
+    return `<button class="fchip" onclick="setFilter('${f.id}')"
+      style="${active?`background:${col};color:#fff;border-color:${col}`:''}">
+      ${f.id==='all'?f.label:f.short}
+    </button>`;
+  }).join('');
+}
+
+function renderTopicList(){
+  const list = (filter==='all' ? TOPICS : TOPICS.filter(t=>t.subj===filter))
+    .map(t=>({...t, score:calcScore(t)}))
+    .sort((a,b)=>b.score-a.score);
+
+  const maxScore = Math.max(...list.map(t=>t.score), 0.01);
+
+  document.getElementById('topic-list').innerHTML = list.map((t,i)=>{
+    const s   = S_MAP[t.subj];
+    const pct = getPct(t.id);
+    const hrs = getHrs(t.id);
+    const col = scoreCol(t.score);
+    const barW = Math.round(t.score/maxScore*100);
+    const wDots = Array.from({length:5},(_,di)=>
+      `<div class="w-dot" style="background:${di<t.w?s.color:'var(--bg3)'}"></div>`).join('');
+    const sliderBg = `linear-gradient(to right,${col} ${pct}%,var(--bg3) ${pct}%)`;
+
+    return `<div class="topic-card" id="tc-${t.id}">
+      <div class="tc-top">
+        <span style="font-size:10px;font-weight:700;color:var(--txt3);min-width:20px;margin-top:3px">#${i+1}</span>
+        <span class="badge" style="background:${s.bg};color:${s.tx}">${s.short}</span>
+        <div class="tc-info">
+          <div class="tc-name">${t.name}</div>
+          <div class="tc-sub">
+            <span class="tc-grp">${t.grp}</span>
+            ${s.openBook?'<span class="ob-tag">📖 Offen</span>':''}
+            <div class="w-dots">${wDots}</div>
+          </div>
+        </div>
+        <div class="score-pill" style="background:${col}22;color:${col}">${t.score.toFixed(2)}</div>
+      </div>
+      <div class="score-bar-wrap"><div class="score-bar" style="width:${barW}%;background:${col}"></div></div>
+      <div class="tc-controls">
+        <div class="ctrl">
+          <div class="ctrl-row">
+            <span class="ctrl-label">Fortschritt</span>
+            <span class="ctrl-val" id="pv-${t.id}">${pct}%</span>
+          </div>
+          <input type="range" min="0" max="100" step="5" value="${pct}"
+            style="background:${sliderBg}"
+            oninput="livePct('${t.id}',this)"
+            onchange="savePct('${t.id}',this.value)">
+        </div>
+        <div class="h-wrap">
+          <span class="ctrl-label" style="text-align:center">Stunden</span>
+          <input type="number" class="h-input" min="0" max="999" step="0.5"
+            value="${hrs}" placeholder="0"
+            onchange="saveHrs('${t.id}',this.value)">
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderMotivModal(){
+  document.getElementById('motiv-content').innerHTML = SUBJECTS.map(s=>{
+    const m   = getMotiv(s.id);
+    const d   = Math.ceil(daysUntil(s.examDate));
+    const date= new Date(s.examDate+'T12:00:00').toLocaleDateString('de-CH',{day:'numeric',month:'short'});
+    const bg  = `linear-gradient(to right,${s.color} ${(m-1)/9*100}%,var(--bg3) ${(m-1)/9*100}%)`;
+    return `<div class="motiv-row">
+      <div class="motiv-top">
+        <div>
+          <div class="motiv-name">${s.name}</div>
+          <div class="motiv-info">${date} · noch ${d} Tage${s.openBook?' · 📖 Open Book':''}</div>
+        </div>
+        <div class="motiv-val" style="color:${s.color}" id="mv-${s.id}">${m}</div>
+      </div>
+      <input type="range" class="big" min="1" max="10" step="1" value="${m}"
+        style="background:${bg}"
+        oninput="liveMotiv('${s.id}',this)"
+        onchange="saveMotiv('${s.id}',this.value)">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-top:3px">
+        <span>Niedrig</span><span>Hoch</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────────
+
+function setFilter(id){
+  filter = id;
+  renderFilterBar();
+  renderTopicList();
+}
+
+function livePct(id, el){
+  const v = parseInt(el.value);
+  const col = scoreCol(calcScore(T_MAP[id], v));
+  fillRange(el, col);
+  const pv = document.getElementById('pv-'+id);
+  if(pv) pv.textContent = v+'%';
+}
+
+function savePct(id, val){
+  setPct(id, parseInt(val));
+  renderRec();
+  renderTopicList();
+}
+
+function saveHrs(id, val){
+  setHrs(id, parseFloat(val)||'');
+}
+
+function liveMotiv(sid, el){
+  fillRange(el, S_MAP[sid].color);
+  const mv = document.getElementById('mv-'+sid);
+  if(mv) mv.textContent = el.value;
+}
+
+function saveMotiv(sid, val){
+  motivation[sid] = parseInt(val); saveM();
+  renderRec();
+  renderTopicList();
+}
+
+function openModal(){
+  renderMotivModal();
+  document.getElementById('modal-bg').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(){
+  document.getElementById('modal-bg').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function bgClick(e){
+  if(e.target === document.getElementById('modal-bg')) closeModal();
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+function init(){
+  renderHeader();
+  renderExamBar();
+  renderRec();
+  renderFilterBar();
+  renderTopicList();
+}
+
+init();
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
