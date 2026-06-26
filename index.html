@@ -266,7 +266,12 @@ function calcScore(t, pctOverride){
   const gap         = Math.max(0, 1 - pct/100);
   const machbarkeit = pct < 80 ? 1.0 : 1.0 - ((pct-80)/20)*0.85;
   const motivFactor = 0.5 + (motiv-1)/9*0.5;
-  return t.w * urgency * gap * machbarkeit * motivFactor;
+  const learnScore  = t.w * urgency * gap * machbarkeit * motivFactor;
+  // Auswendiglern-Fächer brauchen regelmäßige Wiederholung — auch bei hohem Fortschritt
+  const reviewScore = !s.openBook && pct > 0
+    ? (pct/100) * urgency * t.w * 0.25 * motivFactor
+    : 0;
+  return learnScore + reviewScore;
 }
 
 function scoreCol(score){
@@ -324,7 +329,7 @@ function renderRec(){
       return `<div class="rec-item">
         <div class="rec-rank">#${i+1}</div>
         <div class="rec-body">
-          <div class="rec-name">${t.name}</div>
+          <div class="rec-name">${getPct(t.id)>=70&&!s.openBook?'🔄 ':''} ${t.name}</div>
           <div class="rec-meta">${s.short} · ${t.grp} · ${Math.ceil(daysUntil(s.examDate))}d</div>
         </div>
         <div class="rec-score" style="color:${col}">${t.score.toFixed(1)}</div>
@@ -371,6 +376,7 @@ function renderTopicList(){
           <div class="tc-sub">
             <span class="tc-grp">${t.grp}</span>
             ${s.openBook?'<span class="ob-tag">📖 Offen</span>':''}
+            ${!s.openBook&&pct>=70?'<span class="ob-tag" style="background:#dbeafe;color:#1e40af">🔄 Review</span>':''}
             <div class="w-dots">${wDots}</div>
           </div>
         </div>
