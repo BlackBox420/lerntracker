@@ -239,7 +239,10 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
         style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px;margin-bottom:8px;display:block">
       <textarea id="fb-config-input" placeholder="firebaseConfig { apiKey: ..., databaseURL: ..., ... }"
         style="width:100%;padding:10px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:10px;height:88px;resize:none;font-family:monospace;display:block"></textarea>
-      <button class="copy-btn" style="margin-top:8px;background:#ff9500" onclick="saveSync()">🔗 Sync aktivieren</button>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="copy-btn" style="margin:0;flex:1;background:#ff9500" onclick="saveSync()">🔗 Aktivieren</button>
+        <button class="copy-btn" style="margin:0;flex:1;background:#007aff" onclick="fbPush()">⬆ Hochladen</button>
+      </div>
     </div>
     <div style="border-top:.5px solid var(--border);margin-top:16px;padding-top:16px">
       <div style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Manueller Export/Import</div>
@@ -910,9 +913,14 @@ function _connectSync(key){
     syncStatus('⟳ Verbinde…',null);
     _fbRef.on('value', snap=>{
       const data=snap.val();
-      if(!data||!data.ts) return;
       const localTs=parseInt(localStorage.getItem('lt-ts')||'0');
-      if(data.ts<=localTs) return;
+      if(!data||!data.ts){
+        // Firebase leer — lokale Daten hochladen falls vorhanden
+        if(Object.keys(progress).length>0 && localTs>0) fbPush();
+        else syncStatus('● Verbunden',true);
+        return;
+      }
+      if(data.ts<=localTs) return; // Lokale Version ist aktueller
       localStorage.setItem('lt-ts',data.ts);
       if(data.p){progress=data.p;saveP(false);}
       if(data.m){motivation=data.m;saveM(false);}
@@ -948,7 +956,7 @@ function saveSync(){
     localStorage.setItem('lt-sync-key',key.trim());
     localStorage.setItem('lt-fb',JSON.stringify(cfg));
     initSync();
-    setTimeout(fbPush,2500);
+    // Kein auto-push beim Verbinden — verhindert Überschreiben mit leeren Daten
   }catch(e){ alert('Config konnte nicht gelesen werden. Bitte das firebaseConfig { ... } Objekt vollständig einfügen.'); }
 }
 
