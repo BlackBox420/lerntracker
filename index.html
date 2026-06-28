@@ -222,8 +222,28 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
     <div class="modal-sub">Beeinflusst den Prioritäts-Score aller Themen</div>
     <div id="motiv-content"></div>
     <div style="border-top:.5px solid var(--border);margin-top:16px;padding-top:16px">
-      <div style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Daten synchronisieren</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Safari ↔ Chrome: Hier exportieren, dort importieren.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px">Auto-Sync</div>
+        <div id="sync-status" style="font-size:11px;color:var(--txt2)">● Nicht verbunden</div>
+      </div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:8px">Einmal einrichten → Laptop und Handy synchronisieren sich automatisch. <a href="#" onclick="toggleSyncHelp();return false" style="color:#007aff;text-decoration:none">Anleitung ›</a></div>
+      <div id="sync-help" style="display:none;font-size:10px;color:var(--txt2);background:var(--bg3);padding:10px;border-radius:8px;margin-bottom:10px;line-height:1.8">
+        1. <b>console.firebase.google.com</b> → Projekt erstellen<br>
+        2. <b>Build → Realtime Database</b> → Im Testmodus erstellen<br>
+        3. <b>Projekteinstellungen ⚙</b> → Web-App hinzufügen<br>
+        4. <b>firebaseConfig</b>-Objekt in Feld unten einfügen<br>
+        5. Persönlichen Schlüssel wählen → Aktivieren<br>
+        6. Auf allen Geräten denselben Schlüssel + Config eingeben
+      </div>
+      <input id="sync-key-input" type="password" placeholder="Persönlicher Schlüssel (z.B. name2026)"
+        style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px;margin-bottom:8px;display:block">
+      <textarea id="fb-config-input" placeholder="firebaseConfig { apiKey: ..., databaseURL: ..., ... }"
+        style="width:100%;padding:10px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:10px;height:88px;resize:none;font-family:monospace;display:block"></textarea>
+      <button class="copy-btn" style="margin-top:8px;background:#ff9500" onclick="saveSync()">🔗 Sync aktivieren</button>
+    </div>
+    <div style="border-top:.5px solid var(--border);margin-top:16px;padding-top:16px">
+      <div style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Manueller Export/Import</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Einmalige Übertragung ohne Cloud.</div>
       <button id="export-btn" class="copy-btn" style="margin-top:0;margin-bottom:10px" onclick="exportData()">📤 Daten exportieren</button>
       <textarea id="import-input" placeholder="Exportierten Text hier einfügen…" style="width:100%;padding:10px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:11px;height:72px;resize:none;font-family:monospace;display:block"></textarea>
       <button class="copy-btn" style="margin-top:8px;background:#34c759" onclick="importData()">📥 Importieren</button>
@@ -340,9 +360,9 @@ let lastReview = JSON.parse(localStorage.getItem('lt-r')||'{}');
 let filter     = 'all';
 let expanded   = new Set();
 
-function saveP(){ localStorage.setItem('lt-p',JSON.stringify(progress)) }
-function saveM(){ localStorage.setItem('lt-m',JSON.stringify(motivation)) }
-function saveR(){ localStorage.setItem('lt-r',JSON.stringify(lastReview)) }
+function saveP(sync=true){ localStorage.setItem('lt-p',JSON.stringify(progress)); if(sync) debouncedPush(); }
+function saveM(sync=true){ localStorage.setItem('lt-m',JSON.stringify(motivation)); if(sync) debouncedPush(); }
+function saveR(sync=true){ localStorage.setItem('lt-r',JSON.stringify(lastReview)); if(sync) debouncedPush(); }
 
 function todayStr(){ return new Date().toISOString().split('T')[0] }
 function getPct(id){ return (progress[id]||{}).pct||0 }
@@ -621,7 +641,16 @@ function saveMotiv(sid,val){
   renderTopicList();
 }
 
-function openModal(){ renderMotivModal(); document.getElementById('modal-bg').classList.add('open'); document.body.style.overflow='hidden'; }
+function openModal(){
+  renderMotivModal();
+  const keyEl=document.getElementById('sync-key-input');
+  const cfgEl=document.getElementById('fb-config-input');
+  if(keyEl) keyEl.value=getSyncKey();
+  if(cfgEl){ const s=localStorage.getItem('lt-fb')||''; cfgEl.value=s; }
+  syncStatus(_fbRef?'● Verbunden':'● Nicht verbunden', _fbRef?true:null);
+  document.getElementById('modal-bg').classList.add('open');
+  document.body.style.overflow='hidden';
+}
 function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); document.body.style.overflow=''; }
 function bgClick(e){ if(e.target===document.getElementById('modal-bg')) closeModal(); }
 
@@ -840,7 +869,95 @@ function renderStatsView(){
   document.getElementById('stats-content').innerHTML=html;
 }
 
-// ── Sync / Export-Import ───────────────────────────────────────────────────────
+// ── Cloud-Sync (Firebase Realtime Database) ───────────────────────────────────
+
+let _fbRef=null, _fbPushTimer=null, _fbInited=false;
+
+function getSyncKey(){ return localStorage.getItem('lt-sync-key')||''; }
+function getSyncCfg(){ try{ return JSON.parse(localStorage.getItem('lt-fb')||'null'); }catch{ return null; } }
+
+function syncStatus(msg, state){
+  const el=document.getElementById('sync-status');
+  if(!el) return;
+  el.textContent=msg;
+  el.style.color=state===true?'#34c759':state===false?'#ff3b30':'var(--txt2)';
+}
+
+function debouncedPush(){ clearTimeout(_fbPushTimer); _fbPushTimer=setTimeout(fbPush,1200); }
+
+function fbPush(){
+  if(!_fbRef) return;
+  const ts=Date.now();
+  localStorage.setItem('lt-ts',ts);
+  _fbRef.set({p:progress,m:motivation,r:lastReview,ts})
+    .then(()=>syncStatus('↑ Sync '+new Date().toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'}),true))
+    .catch(e=>syncStatus('✗ '+e.code,false));
+}
+
+function _parseFbCfg(raw){
+  raw=raw.trim()
+    .replace(/^(const|var|let)\s+\w+\s*=\s*/,'')
+    .replace(/;?\s*$/,'')
+    .replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":')
+    .replace(/,(\s*[}\]])/g,'$1');
+  return JSON.parse(raw);
+}
+
+function _connectSync(key){
+  try{
+    const db=firebase.database();
+    _fbRef=db.ref('lerntracker/'+key);
+    syncStatus('⟳ Verbinde…',null);
+    _fbRef.on('value', snap=>{
+      const data=snap.val();
+      if(!data||!data.ts) return;
+      const localTs=parseInt(localStorage.getItem('lt-ts')||'0');
+      if(data.ts<=localTs) return;
+      localStorage.setItem('lt-ts',data.ts);
+      if(data.p){progress=data.p;saveP(false);}
+      if(data.m){motivation=data.m;saveM(false);}
+      if(data.r){lastReview=data.r;saveR(false);}
+      renderDayCard(); renderTopicList();
+      if(activeTab==='stats') renderStatsView();
+      syncStatus('↓ '+new Date().toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'}),true);
+    });
+  }catch(e){ syncStatus('✗ '+e.message,false); }
+}
+
+function initSync(){
+  const cfg=getSyncCfg(), key=getSyncKey();
+  if(!cfg||!key) return;
+  const load=(src,cb)=>{ const s=document.createElement('script'); s.src=src; s.onload=cb; document.head.appendChild(s); };
+  if(_fbInited){ _connectSync(key); return; }
+  load('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js',()=>
+    load('https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js',()=>{
+      _fbInited=true;
+      try{ firebase.initializeApp(cfg); }catch(e){}
+      _connectSync(key);
+    })
+  );
+}
+
+function saveSync(){
+  const key=(document.getElementById('sync-key-input')||{}).value||'';
+  const raw=(document.getElementById('fb-config-input')||{}).value||'';
+  if(!key.trim()){ alert('Bitte einen Sync-Schlüssel eingeben.'); return; }
+  try{
+    const cfg=_parseFbCfg(raw);
+    if(!cfg.databaseURL&&!cfg.projectId){ alert('Config unvollständig — databaseURL oder projectId fehlt.'); return; }
+    localStorage.setItem('lt-sync-key',key.trim());
+    localStorage.setItem('lt-fb',JSON.stringify(cfg));
+    initSync();
+    setTimeout(fbPush,2500);
+  }catch(e){ alert('Config konnte nicht gelesen werden. Bitte das firebaseConfig { ... } Objekt vollständig einfügen.'); }
+}
+
+function toggleSyncHelp(){
+  const el=document.getElementById('sync-help');
+  if(el) el.style.display=el.style.display==='none'?'':'none';
+}
+
+// ── Manueller Export/Import ───────────────────────────────────────────────────
 
 function exportData(){
   const data=JSON.stringify({p:progress,m:motivation,r:lastReview,v:2});
@@ -874,6 +991,7 @@ function init(){
   renderDayCard();
   renderFilterBar();
   renderTopicList();
+  initSync();
 }
 
 init();
