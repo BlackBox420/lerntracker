@@ -151,6 +151,28 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 .copy-btn{width:100%;padding:13px;border-radius:10px;border:none;background:#007aff;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:16px}
 .copy-btn:active{opacity:.8}
 .copy-ok{background:#34c759!important}
+
+/* Tab bar */
+.tab-bar{display:flex;gap:0;margin-bottom:14px;background:var(--bg2);border-radius:10px;padding:2px}
+.tab-btn{flex:1;border:none;background:transparent;padding:7px 0;border-radius:8px;font-size:13px;font-weight:600;color:var(--txt2);cursor:pointer;transition:all .15s}
+.tab-btn.active{background:var(--bg);color:var(--txt);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+
+/* Stats view */
+.stats-subj{margin-bottom:22px}
+.stats-subj-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid}
+.stats-subj-name{font-size:14px;font-weight:700}
+.stats-subj-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;flex-shrink:0}
+.stats-subj-avg{font-size:10px;color:var(--txt2);margin-left:auto;text-align:right;white-space:nowrap}
+.stats-bar-row{display:flex;align-items:center;gap:8px;padding:3px 0}
+.stats-bar-lbl{width:110px;flex-shrink:0}
+.stats-bar-name{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+.stats-diff{display:flex;gap:2px;margin-top:2px}
+.stats-diff-dot{width:5px;height:5px;border-radius:50%;background:var(--bg3)}
+.stats-diff-dot.on{background:#ff9500}
+.stats-bar-track{flex:1;height:14px;background:var(--bg3);border-radius:3px;position:relative}
+.stats-bar-fill{position:absolute;left:0;top:0;height:100%;border-radius:3px;transition:width .3s}
+.stats-bar-m80{position:absolute;left:80%;top:-3px;bottom:-3px;width:2px;background:#ff3b30;opacity:.7;z-index:2;border-radius:1px}
+.stats-bar-pct{font-size:10px;font-weight:700;min-width:30px;text-align:right;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -168,10 +190,19 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 
 <div class="content">
   <div class="exam-bar" id="exam-bar"></div>
-  <div id="day-card"></div>
-  <div class="filter-bar" id="filter-bar"></div>
-  <div class="sec-hdr">Prioritätsliste</div>
-  <div id="topic-list"></div>
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="setTab('overview')" id="tabbtn-overview">Übersicht</button>
+    <button class="tab-btn" onclick="setTab('stats')" id="tabbtn-stats">📊 Statistik</button>
+  </div>
+  <div id="tab-overview">
+    <div id="day-card"></div>
+    <div class="filter-bar" id="filter-bar"></div>
+    <div class="sec-hdr">Prioritätsliste</div>
+    <div id="topic-list"></div>
+  </div>
+  <div id="tab-stats" style="display:none">
+    <div id="stats-content"></div>
+  </div>
 </div>
 
 <div class="modal-bg" id="plan-bg" onclick="planBgClick(event)">
@@ -190,6 +221,13 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
     <div class="modal-title">Motivation</div>
     <div class="modal-sub">Beeinflusst den Prioritäts-Score aller Themen</div>
     <div id="motiv-content"></div>
+    <div style="border-top:.5px solid var(--border);margin-top:16px;padding-top:16px">
+      <div style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Daten synchronisieren</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Safari ↔ Chrome: Hier exportieren, dort importieren.</div>
+      <button id="export-btn" class="copy-btn" style="margin-top:0;margin-bottom:10px" onclick="exportData()">📤 Daten exportieren</button>
+      <textarea id="import-input" placeholder="Exportierten Text hier einfügen…" style="width:100%;padding:10px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:11px;height:72px;resize:none;font-family:monospace;display:block"></textarea>
+      <button class="copy-btn" style="margin-top:8px;background:#34c759" onclick="importData()">📥 Importieren</button>
+    </div>
   </div>
 </div>
 
@@ -206,89 +244,89 @@ const SUBJECTS = [
 ];
 
 const TOPICS = [
-  // BC
-  {id:'bc_0', subj:'bc',name:'TCA/Citratzyklus',           w:5,grp:'Locher'},
-  {id:'bc_1', subj:'bc',name:'Glykolyse',                  w:5,grp:'Locher'},
-  {id:'bc_2', subj:'bc',name:'ATP-Synthase',                w:5,grp:'Locher'},
-  {id:'bc_3', subj:'bc',name:'KDiss + Hill-Gleichung',      w:5,grp:'Glockshuber'},
-  {id:'bc_4', subj:'bc',name:'Chymotrypsin-Mechanismus',    w:5,grp:'Glockshuber'},
-  {id:'bc_5', subj:'bc',name:'Wahr/Falsch Kinetik',         w:5,grp:'Glockshuber'},
-  {id:'bc_6', subj:'bc',name:'Glykogen',                    w:5,grp:'Weber-Ban'},
-  {id:'bc_7', subj:'bc',name:'Fettsäuren β-Oxidation',      w:5,grp:'Weber-Ban'},
-  {id:'bc_8', subj:'bc',name:'PLP/Transaminierung',         w:5,grp:'Weber-Ban'},
-  {id:'bc_9', subj:'bc',name:'FAS + PKS-Domänen',           w:5,grp:'Piel'},
-  {id:'bc_10',subj:'bc',name:'DNA-Replikation',             w:5,grp:'Ban'},
-  {id:'bc_11',subj:'bc',name:'Transkription',               w:5,grp:'Ban'},
-  {id:'bc_12',subj:'bc',name:'Translation',                 w:5,grp:'Ban'},
-  {id:'bc_13',subj:'bc',name:'Pentosephosphatweg',          w:3,grp:'Locher'},
-  {id:'bc_14',subj:'bc',name:'Atmungskette',                w:3,grp:'Locher'},
-  {id:'bc_15',subj:'bc',name:'Aminosäureabbau',             w:4,grp:'Weber-Ban'},
-  {id:'bc_16',subj:'bc',name:'Ubiquitin/Proteasom',         w:3,grp:'Weber-Ban'},
-  {id:'bc_17',subj:'bc',name:'Ketonkörper',                 w:3,grp:'Weber-Ban'},
-  {id:'bc_18',subj:'bc',name:'Terpene/Isoprenoide',         w:4,grp:'Piel'},
-  {id:'bc_19',subj:'bc',name:'DNA-Struktur',                w:4,grp:'Ban'},
-  {id:'bc_20',subj:'bc',name:'tRNA/Aminoacyl-Synthetase',   w:4,grp:'Ban'},
-  {id:'bc_21',subj:'bc',name:'Wobble/Inosin',               w:4,grp:'Ban'},
-  {id:'bc_22',subj:'bc',name:'Kinetik kon/koff',            w:4,grp:'Glockshuber'},
-  {id:'bc_23',subj:'bc',name:'Allosterie R/T',              w:3,grp:'Glockshuber'},
+  // BC — d: Schwierigkeit 1-5
+  {id:'bc_0', subj:'bc',name:'TCA/Citratzyklus',           w:5,d:3,grp:'Locher'},
+  {id:'bc_1', subj:'bc',name:'Glykolyse',                  w:5,d:2,grp:'Locher'},
+  {id:'bc_2', subj:'bc',name:'ATP-Synthase',                w:5,d:3,grp:'Locher'},
+  {id:'bc_3', subj:'bc',name:'KDiss + Hill-Gleichung',      w:5,d:4,grp:'Glockshuber'},
+  {id:'bc_4', subj:'bc',name:'Chymotrypsin-Mechanismus',    w:5,d:4,grp:'Glockshuber'},
+  {id:'bc_5', subj:'bc',name:'Wahr/Falsch Kinetik',         w:5,d:3,grp:'Glockshuber'},
+  {id:'bc_6', subj:'bc',name:'Glykogen',                    w:5,d:2,grp:'Weber-Ban'},
+  {id:'bc_7', subj:'bc',name:'Fettsäuren β-Oxidation',      w:5,d:3,grp:'Weber-Ban'},
+  {id:'bc_8', subj:'bc',name:'PLP/Transaminierung',         w:5,d:4,grp:'Weber-Ban'},
+  {id:'bc_9', subj:'bc',name:'FAS + PKS-Domänen',           w:5,d:4,grp:'Piel'},
+  {id:'bc_10',subj:'bc',name:'DNA-Replikation',             w:5,d:3,grp:'Ban'},
+  {id:'bc_11',subj:'bc',name:'Transkription',               w:5,d:3,grp:'Ban'},
+  {id:'bc_12',subj:'bc',name:'Translation',                 w:5,d:3,grp:'Ban'},
+  {id:'bc_13',subj:'bc',name:'Pentosephosphatweg',          w:3,d:3,grp:'Locher'},
+  {id:'bc_14',subj:'bc',name:'Atmungskette',                w:3,d:2,grp:'Locher'},
+  {id:'bc_15',subj:'bc',name:'Aminosäureabbau',             w:4,d:3,grp:'Weber-Ban'},
+  {id:'bc_16',subj:'bc',name:'Ubiquitin/Proteasom',         w:3,d:2,grp:'Weber-Ban'},
+  {id:'bc_17',subj:'bc',name:'Ketonkörper',                 w:3,d:2,grp:'Weber-Ban'},
+  {id:'bc_18',subj:'bc',name:'Terpene/Isoprenoide',         w:4,d:3,grp:'Piel'},
+  {id:'bc_19',subj:'bc',name:'DNA-Struktur',                w:4,d:2,grp:'Ban'},
+  {id:'bc_20',subj:'bc',name:'tRNA/Aminoacyl-Synthetase',   w:4,d:2,grp:'Ban'},
+  {id:'bc_21',subj:'bc',name:'Wobble/Inosin',               w:4,d:2,grp:'Ban'},
+  {id:'bc_22',subj:'bc',name:'Kinetik kon/koff',            w:4,d:3,grp:'Glockshuber'},
+  {id:'bc_23',subj:'bc',name:'Allosterie R/T',              w:3,d:3,grp:'Glockshuber'},
   // OC I
-  {id:'oci_nae',subj:'oc',name:'Nucleophile Add.-Eliminierung',w:5,grp:'OC I',
+  {id:'oci_nae',subj:'oc',name:'Nucleophile Add.-Eliminierung',w:5,d:4,grp:'OC I',
     hint:'Weinreb-Amid, Carbonsäurederivate, Ester/Amid/Acylchlorid, Acyl-Substitution'},
-  {id:'oci_na', subj:'oc',name:'Nucleophile Additionsreaktionen',w:5,grp:'OC I',
+  {id:'oci_na', subj:'oc',name:'Nucleophile Additionsreaktionen',w:5,d:3,grp:'OC I',
     hint:'Grignard, Carbonyl-Reaktivität/Ordering, Acetal/Hemiacetal, Hydratbildung/Gleichgewicht'},
-  {id:'oci_red',subj:'oc',name:'Reduction',w:4,grp:'OC I',
+  {id:'oci_red',subj:'oc',name:'Reduction',w:4,d:2,grp:'OC I',
     hint:'Reduktive Aminierung, NaBH4, DIBAL-H, LiAlH4, Chemoselektivität'},
-  {id:'oci_ox', subj:'oc',name:'Oxidation',w:4,grp:'OC I',
+  {id:'oci_ox', subj:'oc',name:'Oxidation',w:4,d:2,grp:'OC I',
     hint:'Swern-Oxidation, PCC/PDC, Alkohol → Aldehyd/Keton/Carbonsäure'},
-  {id:'oci_alp',subj:'oc',name:'Reaktivität am α-Carbon',w:5,grp:'OC I',
+  {id:'oci_alp',subj:'oc',name:'Reaktivität am α-Carbon',w:5,d:4,grp:'OC I',
     hint:'Aldol, Claisen, Michael, Knoevenagel, Enamin/Iminbildung, Kinetik/Thermodynamik'},
-  {id:'oci_ret',subj:'oc',name:'Retrosynthese & Synthese',w:4,grp:'OC I',
+  {id:'oci_ret',subj:'oc',name:'Retrosynthese & Synthese',w:4,d:5,grp:'OC I',
     hint:'Retrosynthese-Logik, Mehrstufige Synthese, Schutzgruppen, Reaktionskästchen'},
   // OC II
-  {id:'ocii_ylid',subj:'oc',name:'Ylide',w:5,grp:'OC II',
+  {id:'ocii_ylid',subj:'oc',name:'Ylide',w:5,d:5,grp:'OC II',
     hint:'Wittig (Ph3P=CHR), HWE (Phosphonat-Stabilisiert), Corey-Chaykovsky (Epoxid/Cyclopropan), Bestmann-Ohira → Alkin'},
-  {id:'ocii_carb',subj:'oc',name:'Carbenes & Nitrenes',w:4,grp:'OC II',
+  {id:'ocii_carb',subj:'oc',name:'Carbenes & Nitrenes',w:4,d:4,grp:'OC II',
     hint:'Diazo-Chemie, Wolff-Umlagerung (Keten), Arndt-Eistert, Insertion/Addition'},
-  {id:'ocii_rear',subj:'oc',name:'Rearrangement & Benzoin',w:3,grp:'OC II',
+  {id:'ocii_rear',subj:'oc',name:'Rearrangement & Benzoin',w:3,d:3,grp:'OC II',
     hint:'Benzoin-Kondensation (NHC-Katalyse), Pinakol, Beckmann, Baeyer-Villiger'},
-  {id:'ocii_ring',subj:'oc',name:'Ring-construction & Heterocycles',w:3,grp:'OC II',
+  {id:'ocii_ring',subj:'oc',name:'Ring-construction & Heterocycles',w:3,d:3,grp:'OC II',
     hint:'Heterocyclen-Synthese, Cyclisierungen, Hantzsch, Biginelli'},
-  {id:'ocii_rad', subj:'oc',name:'Radicals & SET',w:4,grp:'OC II',
+  {id:'ocii_rad', subj:'oc',name:'Radicals & SET',w:4,d:3,grp:'OC II',
     hint:'Barton-McCombie (Deoxygenierung), Radikalketten, SET-Mechanismen'},
-  {id:'ocii_om',  subj:'oc',name:'Organometallics',w:5,grp:'OC II',
+  {id:'ocii_om',  subj:'oc',name:'Organometallics',w:5,d:5,grp:'OC II',
     hint:'Pd-Zyklus (Heck/Suzuki/Negishi/Buchwald), Grubbs-Metathese, Grignard (1,2/1,4/Weinreb), Mukaiyama (Lewis-Säure)'},
-  {id:'ocii_fmo', subj:'oc',name:'FMO & Diels-Alder',w:5,grp:'OC II',
+  {id:'ocii_fmo', subj:'oc',name:'FMO & Diels-Alder',w:5,d:4,grp:'OC II',
     hint:'FMO-Theorie, HOMO/LUMO-Wechselwirkung, Regioselektivität, endo/exo, inverse Elektronennachfrage'},
-  {id:'ocii_cyc', subj:'oc',name:'Cycloadditions',w:3,grp:'OC II',
+  {id:'ocii_cyc', subj:'oc',name:'Cycloadditions',w:3,d:3,grp:'OC II',
     hint:'[2+2] photochemisch, 1,3-Dipolar (Huisgen), Azomethinylidid, 1,3-Dipole'},
-  {id:'ocii_per', subj:'oc',name:'Elektrozyklisch & Pericyclisch',w:3,grp:'OC II',
+  {id:'ocii_per', subj:'oc',name:'Elektrozyklisch & Pericyclisch',w:3,d:4,grp:'OC II',
     hint:'Elektrozyklische Reaktionen (4n/4n+2, thermisch/photochemisch), Cope/Claisen-Umlagerung, Sigmatrope'},
-  {id:'ocii_pg',  subj:'oc',name:'Protecting Groups',w:4,grp:'OC II',
+  {id:'ocii_pg',  subj:'oc',name:'Protecting Groups',w:4,d:2,grp:'OC II',
     hint:'TBS/TBDPS (Silylether für OH), Cbz/Boc (für NH), Benzylether, Acetale, Orthogonale Schutzgruppen'},
-  {id:'ocii_syn', subj:'oc',name:'Synthese',w:3,grp:'OC II',
+  {id:'ocii_syn', subj:'oc',name:'Synthese',w:3,d:5,grp:'OC II',
     hint:'Corey-Fuchs (Aldehyd → Alkin), Appel (OH → Br/Cl), Retrosynthese OC II, Mehrstufige Probleme'},
   // IC
-  {id:'ic_0',subj:'ic',name:'Kristallstrukturen (auswendig)',      w:5,grp:'IC II'},
-  {id:'ic_1',subj:'ic',name:'Phasendiagramme + Invariant Points', w:5,grp:'IC II'},
-  {id:'ic_2',subj:'ic',name:'Elektrische Eigenschaften',           w:4,grp:'IC II'},
-  {id:'ic_3',subj:'ic',name:'Thermische Eigenschaften',            w:3,grp:'IC II'},
-  {id:'ic_4',subj:'ic',name:'Analysemethoden',                     w:2,grp:'IC II'},
-  {id:'ic_5',subj:'ic',name:'Synthesemethoden (shake & bake)',     w:1,grp:'IC II'},
+  {id:'ic_0',subj:'ic',name:'Kristallstrukturen (auswendig)',      w:5,d:2,grp:'IC II'},
+  {id:'ic_1',subj:'ic',name:'Phasendiagramme + Invariant Points', w:5,d:4,grp:'IC II'},
+  {id:'ic_2',subj:'ic',name:'Elektrische Eigenschaften',           w:4,d:3,grp:'IC II'},
+  {id:'ic_3',subj:'ic',name:'Thermische Eigenschaften',            w:3,d:3,grp:'IC II'},
+  {id:'ic_4',subj:'ic',name:'Analysemethoden',                     w:2,d:2,grp:'IC II'},
+  {id:'ic_5',subj:'ic',name:'Synthesemethoden (shake & bake)',     w:1,d:1,grp:'IC II'},
   // CIW
-  {id:'ciw_0',subj:'ciw',name:'Wärmetransport',              w:5,grp:'CIW'},
-  {id:'ciw_1',subj:'ciw',name:'Ideale Reaktoren (PFR/CSTR)', w:5,grp:'CIW'},
-  {id:'ciw_2',subj:'ciw',name:'Separation',                   w:4,grp:'CIW'},
-  {id:'ciw_3',subj:'ciw',name:'Stofftransport',               w:4,grp:'CIW'},
-  {id:'ciw_4',subj:'ciw',name:'Katalyse',                     w:3,grp:'CIW'},
+  {id:'ciw_0',subj:'ciw',name:'Wärmetransport',              w:5,d:4,grp:'CIW'},
+  {id:'ciw_1',subj:'ciw',name:'Ideale Reaktoren (PFR/CSTR)', w:5,d:4,grp:'CIW'},
+  {id:'ciw_2',subj:'ciw',name:'Separation',                   w:4,d:3,grp:'CIW'},
+  {id:'ciw_3',subj:'ciw',name:'Stofftransport',               w:4,d:4,grp:'CIW'},
+  {id:'ciw_4',subj:'ciw',name:'Katalyse',                     w:3,d:3,grp:'CIW'},
   // AC
-  {id:'ac_0',subj:'ac',name:'NMR/IR/MS Strukturanalytik',     w:5,grp:'AC'},
-  {id:'ac_1',subj:'ac',name:'Trennmethoden/Chromatographie',  w:3,grp:'AC'},
-  {id:'ac_2',subj:'ac',name:'Elementanalytik + XRF',          w:3,grp:'AC'},
+  {id:'ac_0',subj:'ac',name:'NMR/IR/MS Strukturanalytik',     w:5,d:3,grp:'AC'},
+  {id:'ac_1',subj:'ac',name:'Trennmethoden/Chromatographie',  w:3,d:2,grp:'AC'},
+  {id:'ac_2',subj:'ac',name:'Elementanalytik + XRF',          w:3,d:2,grp:'AC'},
   // PC
-  {id:'pc_0',subj:'pc',name:'Operatoren & Kommutatoren',       w:3,grp:'PC III'},
-  {id:'pc_1',subj:'pc',name:'Drehimpuls, Spin & Termsymbole',  w:3,grp:'PC III'},
-  {id:'pc_2',subj:'pc',name:'Schrödinger & Wellenfunktionen',  w:3,grp:'PC III'},
-  {id:'pc_3',subj:'pc',name:'Hyperfein & Zeeman-Effekt',       w:3,grp:'PC III'},
+  {id:'pc_0',subj:'pc',name:'Operatoren & Kommutatoren',       w:3,d:4,grp:'PC III'},
+  {id:'pc_1',subj:'pc',name:'Drehimpuls, Spin & Termsymbole',  w:3,d:4,grp:'PC III'},
+  {id:'pc_2',subj:'pc',name:'Schrödinger & Wellenfunktionen',  w:3,d:4,grp:'PC III'},
+  {id:'pc_3',subj:'pc',name:'Hyperfein & Zeeman-Effekt',       w:3,d:3,grp:'PC III'},
 ];
 
 const S_MAP = Object.fromEntries(SUBJECTS.map(s=>[s.id,s]));
@@ -460,6 +498,8 @@ function renderTopicList(){
     const isExp=expanded.has(t.id);
     const wDots=Array.from({length:5},(_,di)=>
       `<div class="w-dot" style="background:${di<t.w?s.color:'var(--bg3)'}"></div>`).join('');
+    const dDots=Array.from({length:5},(_,di)=>
+      `<div class="w-dot" style="background:${di<(t.d||3)?'#ff9500':'var(--bg3)'}"></div>`).join('');
     const sliderBg=`linear-gradient(to right,${col} ${pct}%,var(--bg3) ${pct}%)`;
 
     return`<div class="t-row" id="tr-${t.id}" onclick="toggleExpand('${t.id}')">
@@ -481,7 +521,8 @@ function renderTopicList(){
           <span class="meta-tag" style="background:${s.bg};color:${s.tx}">${t.grp}</span>
           ${s.openBook?'<span class="meta-tag ob-tag">📖 Open Book</span>':''}
           ${isRev?'<span class="meta-tag rev-tag">🔄 Review</span>':''}
-          <div class="w-dots">${wDots}</div>
+          <div class="w-dots" title="Wichtigkeit">${wDots}</div>
+          <div class="w-dots" title="Schwierigkeit">${dDots}</div>
         </div>
         ${t.hint?`<div style="font-size:10px;color:var(--txt3);font-style:italic;margin-bottom:6px;line-height:1.4">${t.hint}</div>`:''}
 
@@ -594,7 +635,8 @@ function estimateDur(t){
   const pct=getPct(t.id), gap=Math.max(0,1-pct/100), s=S_MAP[t.subj];
   if(isReviewTopic(t)) return 30;
   const base = t.w>=5?120 : t.w===4?90 : t.w===3?60 : 45;
-  const scaled = base*(0.35+0.65*gap);
+  const diffMod = 0.8 + (t.d||3)*0.1; // d:1→0.9, d:3→1.1, d:5→1.3
+  const scaled = base*(0.35+0.65*gap)*diffMod;
   const adj = s.openBook ? scaled*0.65 : scaled;
   return Math.max(30, Math.round(adj/15)*15);
 }
@@ -747,6 +789,82 @@ function openPlan(){
 }
 function closePlan(){ document.getElementById('plan-bg').classList.remove('open'); document.body.style.overflow=''; }
 function planBgClick(e){ if(e.target===document.getElementById('plan-bg')) closePlan(); }
+
+// ── Statistik ─────────────────────────────────────────────────────────────────
+
+let activeTab='overview';
+
+function setTab(tab){
+  activeTab=tab;
+  document.getElementById('tab-overview').style.display=tab==='overview'?'':'none';
+  document.getElementById('tab-stats').style.display=tab==='stats'?'':'none';
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tabbtn-'+tab).classList.add('active');
+  if(tab==='stats') renderStatsView();
+}
+
+function renderStatsView(){
+  const subjOrder=['bc','oc','ic','ciw','ac','pc'];
+  const html=subjOrder.map(sid=>{
+    const s=S_MAP[sid];
+    const topics=TOPICS.filter(t=>t.subj===sid);
+    const avg=topics.length?Math.round(topics.reduce((a,t)=>a+getPct(t.id),0)/topics.length):0;
+    const done80=topics.filter(t=>getPct(t.id)>=80).length;
+    const d=Math.ceil(daysUntil(s.examDate));
+    const rows=topics.map(t=>{
+      const pct=getPct(t.id);
+      const col=pct>=80?'#34c759':pct>=50?'#ff9500':'#ff3b30';
+      const dDots=Array.from({length:5},(_,i)=>
+        `<div class="stats-diff-dot${i<(t.d||3)?' on':''}"></div>`).join('');
+      return`<div class="stats-bar-row">
+        <div class="stats-bar-lbl">
+          <div class="stats-bar-name">${t.name}</div>
+          <div class="stats-diff">${dDots}</div>
+        </div>
+        <div class="stats-bar-track">
+          <div class="stats-bar-fill" style="width:${pct}%;background:${col}"></div>
+          <div class="stats-bar-m80"></div>
+        </div>
+        <div class="stats-bar-pct" style="color:${col}">${pct}%</div>
+      </div>`;
+    }).join('');
+    return`<div class="stats-subj">
+      <div class="stats-subj-hdr" style="border-color:${s.color}">
+        <span class="stats-subj-name" style="color:${s.color}">${s.name}</span>
+        <span class="stats-subj-badge" style="background:${s.bg};color:${s.tx}">${s.short}</span>
+        <span class="stats-subj-avg">${avg}% ø · ${done80}/${topics.length} ≥80% · ${d}d</span>
+      </div>
+      ${rows}
+    </div>`;
+  }).join('');
+  document.getElementById('stats-content').innerHTML=html;
+}
+
+// ── Sync / Export-Import ───────────────────────────────────────────────────────
+
+function exportData(){
+  const data=JSON.stringify({p:progress,m:motivation,r:lastReview,v:2});
+  navigator.clipboard.writeText(data).then(()=>{
+    const btn=document.getElementById('export-btn');
+    btn.textContent='✓ Kopiert!'; btn.classList.add('copy-ok');
+    setTimeout(()=>{btn.textContent='📤 Daten exportieren';btn.classList.remove('copy-ok');},2000);
+  });
+}
+
+function importData(){
+  const raw=(document.getElementById('import-input')||{}).value||'';
+  try{
+    const data=JSON.parse(raw.trim());
+    if(data.p){progress=data.p;saveP();}
+    if(data.m){motivation=data.m;saveM();}
+    if(data.r){lastReview=data.r;saveR();}
+    closeModal();
+    renderDayCard(); renderTopicList();
+    alert('✓ Import erfolgreich!');
+  }catch(e){
+    alert('Ungültige Daten. Bitte den vollständigen exportierten Text einfügen.');
+  }
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
