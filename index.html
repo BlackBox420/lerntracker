@@ -148,9 +148,20 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 .plan-sub{font-size:10px;color:var(--txt2);margin-top:2px}
 .plan-dur-bar{height:3px;border-radius:2px;margin-top:5px;max-width:100%}
 .plan-break{opacity:.55}
+.plan-appt{opacity:.85}
 .copy-btn{width:100%;padding:13px;border-radius:10px;border:none;background:#007aff;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:16px}
 .copy-btn:active{opacity:.8}
 .copy-ok{background:#34c759!important}
+
+/* Termine im Tagesplan */
+.appt-hint{font-size:11px;color:var(--txt2);margin-bottom:8px}
+.appt-chip{display:inline-flex;align-items:center;gap:5px;background:var(--bg2);border-radius:20px;padding:4px 10px;font-size:11px;margin:0 6px 6px 0}
+.appt-chip a{color:#ff3b30;text-decoration:none;font-weight:700}
+.appt-add-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.appt-add-row input[type=time]{padding:6px 8px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px}
+.appt-add-row input[type=text]{flex:1;min-width:90px;padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px}
+.appt-add-btn{width:30px;height:30px;border-radius:8px;border:none;background:#007aff;color:#fff;font-size:16px;font-weight:700;cursor:pointer;flex-shrink:0}
+.appt-skip-link{font-size:11px;color:var(--txt3);display:inline-block;margin-top:6px;text-decoration:none}
 
 /* Tab bar */
 .tab-bar{display:flex;gap:0;margin-bottom:14px;background:var(--bg2);border-radius:10px;padding:2px}
@@ -210,6 +221,12 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
     <button class="modal-close" onclick="closePlan()">✕</button>
     <div class="modal-title">📅 Tagesplan</div>
     <div class="modal-sub" id="plan-date"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Beginn</label>
+      <input type="time" id="daystart-input" onchange="saveDayStart(this.value)"
+        style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
+    </div>
+    <div id="appt-section" style="margin-bottom:14px"></div>
     <div id="plan-content"></div>
     <button class="copy-btn" id="copy-btn" onclick="copyPlan()">📋 Als Text kopieren</button>
   </div>
@@ -368,6 +385,9 @@ function saveM(sync=true){ localStorage.setItem('lt-m',JSON.stringify(motivation
 function saveR(sync=true){ localStorage.setItem('lt-r',JSON.stringify(lastReview)); if(sync) debouncedPush(); }
 
 function todayStr(){ return new Date().toISOString().split('T')[0] }
+function esc(str){
+  return String(str??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function getPct(id){ return (progress[id]||{}).pct||0 }
 function getHrs(id){ return (progress[id]||{}).hrs||'' }
 function getMotiv(sid){ return motivation[sid]||5 }
@@ -694,57 +714,161 @@ function estimateDur(t){
   return Math.max(30, Math.round(adj/15)*15);
 }
 
-function generateSchedule(){
-  const entries=[];
-  let cur=7*60, studySince=0, lunchDone=false;
-  const END=21*60, LUNCH=12*60+30, EVENING=19*60;
+// ── Tagesplan-Einstellungen & Termine ──────────────────────────────────────────
 
-  const scored = TOPICS
-    .map(t=>({...t, score:calcScore(t), dur:estimateDur(t)}))
-    .filter(t=>t.score>0.05)
+function toMin(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
+
+function getDayPrefs(){
+  return JSON.parse(localStorage.getItem('lt-dayprefs')||'{"start":420,"end":1260,"lunch":750,"dinner":1140}');
+}
+function saveDayPrefs(p){ localStorage.setItem('lt-dayprefs', JSON.stringify(p)); }
+function saveDayStart(hhmm){
+  if(!hhmm) return;
+  const p=getDayPrefs(); p.start=toMin(hhmm); saveDayPrefs(p);
+  renderPlan();
+}
+
+function getTodayAppointments(){
+  const all=JSON.parse(localStorage.getItem('lt-appointments')||'{}');
+  return all[todayStr()] ?? null; // null = heute noch nicht gefragt
+}
+function saveTodayAppointments(list){
+  const all=JSON.parse(localStorage.getItem('lt-appointments')||'{}');
+  all[todayStr()]=list;
+  const keys=Object.keys(all).sort();
+  while(keys.length>7){ delete all[keys.shift()]; }
+  localStorage.setItem('lt-appointments', JSON.stringify(all));
+}
+
+function addAppointment(){
+  const s=document.getElementById('appt-start-input').value;
+  const e=document.getElementById('appt-end-input').value;
+  const l=(document.getElementById('appt-label-input').value||'').trim();
+  if(!s||!e){ alert('Bitte Start- und Endzeit angeben.'); return; }
+  if(toMin(e)<=toMin(s)){ alert('Ende muss nach dem Start liegen.'); return; }
+  const list=getTodayAppointments()||[];
+  list.push({start:s,end:e,label:l||'Termin'});
+  saveTodayAppointments(list);
+  renderApptSection();
+  renderPlan();
+}
+function removeAppointment(i){
+  const list=getTodayAppointments()||[];
+  list.splice(i,1);
+  saveTodayAppointments(list);
+  renderApptSection();
+  renderPlan();
+}
+function dismissApptPrompt(){
+  if(getTodayAppointments()===null) saveTodayAppointments([]);
+  renderApptSection();
+}
+
+function renderApptSection(){
+  const el=document.getElementById('appt-section');
+  if(!el) return;
+  const raw=getTodayAppointments();
+  const list=raw||[];
+  const asked = raw!==null;
+  el.innerHTML=`
+    ${!asked?'<div class="appt-hint">Steht heute etwas Festes an, das der Plan umgehen soll? (z.B. Training)</div>':''}
+    ${list.map((a,i)=>`<span class="appt-chip">📌 ${esc(a.label)} ${esc(a.start)}–${esc(a.end)} <a href="#" onclick="removeAppointment(${i});return false">✕</a></span>`).join('')}
+    <div class="appt-add-row">
+      <input type="time" id="appt-start-input">
+      <input type="time" id="appt-end-input">
+      <input type="text" id="appt-label-input" placeholder="z.B. Training">
+      <button class="appt-add-btn" onclick="addAppointment()">+</button>
+    </div>
+    ${!asked?'<a href="#" onclick="dismissApptPrompt();return false" class="appt-skip-link">Nichts heute →</a>':''}
+  `;
+}
+
+// ── Tagesplan-Generierung ───────────────────────────────────────────────────────
+// Feste Termine (Sperren) und Mahlzeiten werden zuerst platziert, die freien
+// Zeitfenster dazwischen füllt eine Round-Robin-Rotation zwischen den Fächern
+// (statt einer reinen Score-Sortierung, die sonst leicht "ein Fach am Stück" ergibt).
+
+function mergeIntervals(list){
+  const sorted=[...list].sort((a,b)=>a.start-b.start);
+  const out=[];
+  for(const iv of sorted){
+    if(out.length && iv.start<=out[out.length-1].end){
+      out[out.length-1].end=Math.max(out[out.length-1].end, iv.end);
+    } else out.push({...iv});
+  }
+  return out;
+}
+
+function generateSchedule(){
+  const prefs=getDayPrefs();
+  const appts=(getTodayAppointments()||[]).map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
+  const fixed=mergeIntervals([
+    ...appts.map(a=>({...a, label:'📌 '+a.label})),
+    {start:prefs.lunch,end:prefs.lunch+60,label:'🍽️ Mittagspause'},
+    {start:prefs.dinner,end:prefs.dinner+30,label:'🍽️ Abendbrot'}
+  ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
+
+  const bySubj={};
+  TOPICS.forEach(t=>{
+    const score=calcScore(t);
+    if(score<=0.05 || isReviewTopic(t)) return;
+    (bySubj[t.subj]=bySubj[t.subj]||[]).push({...t,score,remaining:estimateDur(t)});
+  });
+  Object.values(bySubj).forEach(a=>a.sort((x,y)=>y.score-x.score));
+  let subjOrder=Object.keys(bySubj).sort((a,b)=>(bySubj[b][0]?.score||0)-(bySubj[a][0]?.score||0));
+
+  const reviewQ = TOPICS.map(t=>({...t,score:calcScore(t)}))
+    .filter(t=>isReviewTopic(t)&&!reviewedToday(t.id)&&t.score>0.05)
     .sort((a,b)=>b.score-a.score);
 
-  const learnQ  = scored.filter(t=>!isReviewTopic(t));
-  const reviewQ = scored.filter(t=>isReviewTopic(t)&&!reviewedToday(t.id));
+  const entries=[];
+  let cur=prefs.start, studySince=0;
 
-  for(const t of learnQ){
-    if(cur>=EVENING) break;
-
-    // Mittagspause einfügen
-    if(!lunchDone && (cur>=LUNCH || cur+t.dur>LUNCH+15)){
-      const at=Math.max(cur, LUNCH);
-      entries.push({type:'break',emoji:'🍽️',label:'Mittagspause',dur:60,time:at});
-      cur=at+60; studySince=0; lunchDone=true;
+  function fillWindow(end){
+    while(cur<end-14 && subjOrder.length>0){
+      if(studySince>=90){
+        const brk=Math.min(20,end-cur);
+        if(brk<10) break;
+        entries.push({type:'break',emoji:'☕',label:'Pause',dur:brk,time:cur});
+        cur+=brk; studySince=0; continue;
+      }
+      const subj=subjOrder[0];
+      const list=bySubj[subj];
+      if(!list||!list.length){ subjOrder.shift(); continue; }
+      const t=list[0];
+      const avail=end-cur;
+      if(avail<20) break;
+      const dur=Math.min(t.remaining, Math.max(20,Math.floor(avail/15)*15));
+      entries.push({type:'topic',t:{...t,dur},time:cur});
+      t.remaining-=dur;
+      if(t.remaining<=0) list.shift();
+      cur+=dur; studySince+=dur;
+      subjOrder.push(subjOrder.shift()); // Fach rotieren
     }
+  }
 
-    // Kurze Pause nach 90min
-    if(studySince>=90){
-      entries.push({type:'break',emoji:'☕',label:'Pause',dur:20,time:cur});
-      cur+=20; studySince=0;
+  for(const f of fixed){
+    if(f.start>=prefs.end) break;
+    fillWindow(Math.max(cur,f.start));
+    cur=Math.max(cur,f.start);
+    const dur=Math.min(f.end,prefs.end)-cur;
+    if(dur>0){
+      entries.push({type:'appt',label:f.label,dur,time:cur});
+      cur+=dur;
     }
+    studySince=0;
+  }
+  fillWindow(prefs.end);
 
-    // Zu langes Thema zu später Stunde überspringen
-    if(cur+t.dur>EVENING+30 && t.dur>60 && !S_MAP[t.subj].openBook) continue;
-    if(cur+t.dur>END) break;
-
-    entries.push({type:'topic',t,time:cur});
-    cur+=t.dur; studySince+=t.dur;
+  if(reviewQ.length>0 && cur<prefs.end-15){
+    const dur=Math.min(75, prefs.end-cur-15>0?prefs.end-cur:0);
+    if(dur>=20){
+      entries.push({type:'review',topics:reviewQ,dur,time:cur});
+      cur+=dur;
+    }
   }
 
-  // Abendessen-Pause
-  if(cur<EVENING+15 && cur>EVENING-45){
-    entries.push({type:'break',emoji:'🍽️',label:'Abendbrot',dur:30,time:Math.max(cur,EVENING-15)});
-    cur=Math.max(cur,EVENING-15)+30; studySince=0;
-  }
-
-  // Wiederholungs-Block
-  if(reviewQ.length>0 && cur<END-30){
-    const dur=Math.min(75, END-cur-15);
-    entries.push({type:'review',topics:reviewQ,dur,time:cur});
-    cur+=dur;
-  }
-
-  entries.push({type:'end',time:Math.min(cur,END)});
+  entries.push({type:'end',time:Math.min(cur,prefs.end)});
   return entries;
 }
 
@@ -785,6 +909,11 @@ function renderPlan(){
       <div class="plan-body"><div class="plan-label">${e.emoji} ${e.label}</div>
       <div class="plan-sub">${e.dur} Minuten</div></div>
     </div>`;
+    if(e.type==='appt') return`<div class="plan-entry plan-appt">
+      <div class="plan-time">${fmtTime(e.time)}</div>
+      <div class="plan-body"><div class="plan-label">${esc(e.label)}</div>
+      <div class="plan-sub">${e.dur} Minuten · fest eingeplant</div></div>
+    </div>`;
     if(e.type==='review'){
       const names=e.topics.slice(0,4).map(t=>{
         const s=S_MAP[t.subj];
@@ -817,6 +946,8 @@ function planToText(){
       lines.push(`${fmtTime(e.time)}  [${s.short}] ${e.t.name} — ${e.t.dur}min (${getPct(e.t.id)}% erledigt)`);
     } else if(e.type==='break'){
       lines.push(`${fmtTime(e.time)}  ${e.emoji} ${e.label} (${e.dur}min)`);
+    } else if(e.type==='appt'){
+      lines.push(`${fmtTime(e.time)}  ${e.label} (${e.dur}min, fest)`);
     } else if(e.type==='review'){
       const names=e.topics.slice(0,5).map(t=>t.name).join(', ');
       lines.push(`${fmtTime(e.time)}  🔄 Wiederholung (${e.dur}min): ${names}`);
@@ -836,6 +967,8 @@ function copyPlan(){
 }
 
 function openPlan(){
+  document.getElementById('daystart-input').value = fmtTime(getDayPrefs().start);
+  renderApptSection();
   renderPlan();
   document.getElementById('plan-bg').classList.add('open');
   document.body.style.overflow='hidden';
