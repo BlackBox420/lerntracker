@@ -383,21 +383,42 @@ function daysUntil(ds){
   return Math.max(0,(new Date(ds+'T12:00:00')-new Date())/86400000);
 }
 
+function daysSinceReview(id){
+  const lr = lastReview[id];
+  if(!lr) return null;
+  return Math.max(0,(new Date(todayStr()+'T12:00:00')-new Date(lr+'T12:00:00'))/86400000);
+}
+
+// Ebbinghaus-Vergessenskurve: retention sinkt exponentiell seit der letzten Wiederholung.
+// "Stability" (wie lange die Erinnerung hält) wächst mit dem Lernfortschritt und schrumpft
+// mit der Schwierigkeit — je schwerer ein Thema, desto schneller verblasst es wieder.
+function retention(t){
+  const pct = getPct(t.id);
+  if(pct<=0) return 1;
+  const daysSince = daysSinceReview(t.id);
+  const ds = daysSince===null ? 999 : daysSince;
+  const difficultyFactor = 1.5-(t.d||3)*0.15;
+  const stability = Math.max(1,(pct/100)*14*difficultyFactor);
+  return Math.exp(-ds/stability);
+}
+
 function calcScore(t, pctOverride){
   const s = S_MAP[t.subj];
   const days  = daysUntil(s.examDate);
   const pct   = pctOverride!==undefined ? pctOverride : getPct(t.id);
   const motiv = getMotiv(t.subj);
+  const d     = t.d||3;
   const urgency     = Math.max(0,Math.min(1,1-days/75));
   const gap         = Math.max(0,1-pct/100);
   const machbarkeit = pct<80 ? 1.0 : 1.0-((pct-80)/20)*0.85;
   const motivFactor = 0.5+(motiv-1)/9*0.5;
-  const learnScore  = t.w*urgency*gap*machbarkeit*motivFactor;
-  // Review-Faktor: Auswendiglern-Fächer brauchen tägliche Wiederholung
-  // Sinkt auf 5% wenn heute bereits wiederholt
-  const revFactor   = reviewedToday(t.id) ? 0.05 : 1.0;
+  // Schwierigere Themen früh angehen statt aufschieben: moderater Prioritäts-Bonus.
+  const diffBoost   = 0.7+d*0.12;
+  const learnScore  = t.w*urgency*gap*machbarkeit*motivFactor*diffBoost;
+  // Review-Priorität steigt kontinuierlich mit dem Vergessen (1-retention),
+  // statt nur binär "heute schon wiederholt oder nicht".
   const reviewScore = !s.openBook&&pct>0
-    ? (pct/100)*urgency*t.w*0.3*motivFactor*revFactor
+    ? (1-retention(t))*urgency*t.w*0.5*motivFactor
     : 0;
   return learnScore+reviewScore;
 }
