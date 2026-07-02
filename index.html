@@ -824,14 +824,19 @@ function generateSchedule(){
   const entries=[];
   let cur=prefs.start, studySince=0;
 
+  // Ein Block (Fenster) gehört primär einem Fach — nur wenn dieses Fach vorzeitig
+  // leer ist, füllt ausnahmsweise das nächste Fach den Rest des Blocks auf.
   function fillWindow(end){
-    while(cur<end-14 && subjOrder.length>0){
+    if(subjOrder.length===0) return;
+    const primary=subjOrder[0];
+    while(cur<end-14){
       if(studySince>=90){
         const brk=Math.min(20,end-cur);
         if(brk<10) break;
         entries.push({type:'break',emoji:'☕',label:'Pause',dur:brk,time:cur});
         cur+=brk; studySince=0; continue;
       }
+      if(subjOrder.length===0) break;
       const subj=subjOrder[0];
       const list=bySubj[subj];
       if(!list||!list.length){ subjOrder.shift(); continue; }
@@ -843,7 +848,13 @@ function generateSchedule(){
       t.remaining-=dur;
       if(t.remaining<=0) list.shift();
       cur+=dur; studySince+=dur;
-      subjOrder.push(subjOrder.shift()); // Fach rotieren
+    }
+    // Leitfach dieses Blocks noch nicht fertig (Zeit reichte nicht) -> für den
+    // nächsten Block zurückstellen, damit dort ein anderes Fach drankommt.
+    const idx=subjOrder.indexOf(primary);
+    if(idx!==-1 && bySubj[primary] && bySubj[primary].length){
+      subjOrder.splice(idx,1);
+      subjOrder.push(primary);
     }
   }
 
