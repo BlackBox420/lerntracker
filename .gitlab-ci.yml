@@ -2,7 +2,7 @@ pages:
   stage: deploy
   script:
     - mkdir -p public
-    - cp ETH_Lerntracker.html public/index.html
+    - cp index.html manifest.json sw.js icon.svg public/
   artifacts:
     paths:
       - public
