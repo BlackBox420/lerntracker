@@ -163,6 +163,21 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 .appt-add-btn{width:30px;height:30px;border-radius:8px;border:none;background:#007aff;color:#fff;font-size:16px;font-weight:700;cursor:pointer;flex-shrink:0}
 .appt-skip-link{font-size:11px;color:var(--txt3);display:inline-block;margin-top:6px;text-decoration:none}
 
+/* Tagesplan-Kalenderraster */
+.grid-row{display:flex;gap:8px;margin-bottom:16px}
+.grid-gutter{width:38px;position:relative;flex-shrink:0}
+.grid-gutter-label{position:absolute;left:0;right:0;text-align:right;font-size:9px;color:var(--txt3);font-variant-numeric:tabular-nums;transform:translateY(-50%)}
+.plan-grid{flex:1;position:relative;background:var(--bg2);border-radius:8px}
+.grid-hour-line{position:absolute;left:0;right:0;border-top:.5px solid var(--border)}
+.grid-now-line{position:absolute;left:0;right:0;border-top:2px solid #ff3b30;z-index:5}
+.grid-now-dot{position:absolute;left:-4px;top:-4px;width:8px;height:8px;border-radius:50%;background:#ff3b30}
+.grid-block{position:absolute;left:3px;right:3px;border-radius:6px;padding:3px 7px;overflow:hidden;box-sizing:border-box;cursor:default}
+.grid-block-time{font-size:9px;font-weight:700;opacity:.8;line-height:1.2}
+.grid-block-name{font-size:11px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid-block-break{opacity:.55}
+.grid-block-appt{border:1.5px dashed rgba(0,0,0,.3)}
+@media(prefers-color-scheme:dark){.grid-block-appt{border-color:rgba(255,255,255,.3)}}
+
 /* Tab bar */
 .tab-bar{display:flex;gap:0;margin-bottom:14px;background:var(--bg2);border-radius:10px;padding:2px}
 .tab-btn{flex:1;border:none;background:transparent;padding:7px 0;border-radius:8px;font-size:13px;font-weight:600;color:var(--txt2);cursor:pointer;transition:all .15s}
@@ -221,10 +236,17 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
     <button class="modal-close" onclick="closePlan()">✕</button>
     <div class="modal-title">📅 Tagesplan</div>
     <div class="modal-sub" id="plan-date"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Beginn</label>
-      <input type="time" id="daystart-input" onchange="saveDayStart(this.value)"
-        style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Beginn</label>
+        <input type="time" id="daystart-input" onchange="saveDayStart(this.value)"
+          style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Ende</label>
+        <input type="time" id="dayend-input" onchange="saveDayEnd(this.value)"
+          style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
+      </div>
     </div>
     <div id="appt-section" style="margin-bottom:14px"></div>
     <div id="plan-content"></div>
@@ -724,7 +746,18 @@ function getDayPrefs(){
 function saveDayPrefs(p){ localStorage.setItem('lt-dayprefs', JSON.stringify(p)); }
 function saveDayStart(hhmm){
   if(!hhmm) return;
-  const p=getDayPrefs(); p.start=toMin(hhmm); saveDayPrefs(p);
+  const p=getDayPrefs();
+  const newStart=toMin(hhmm);
+  if(newStart>=p.end){ alert('Beginn muss vor dem Ende liegen.'); document.getElementById('daystart-input').value=fmtTime(p.start); return; }
+  p.start=newStart; saveDayPrefs(p);
+  renderPlan();
+}
+function saveDayEnd(hhmm){
+  if(!hhmm) return;
+  const p=getDayPrefs();
+  const newEnd=toMin(hhmm);
+  if(newEnd<=p.start){ alert('Ende muss nach dem Beginn liegen.'); document.getElementById('dayend-input').value=fmtTime(p.end); return; }
+  p.end=newEnd; saveDayPrefs(p);
   renderPlan();
 }
 
@@ -885,67 +918,64 @@ function generateSchedule(){
 
 let _planEntries=[];
 
+// Kalenderraster (Outlook-artige Tagesansicht): jeder Eintrag wird proportional
+// zu seiner Uhrzeit/Dauer als Block auf einer Stundenskala positioniert.
+function renderPlanGrid(entries, prefs){
+  const PXMIN=1.15;
+  const gridStart=prefs.start, gridEnd=prefs.end;
+  const totalH=Math.max(1,(gridEnd-gridStart)*PXMIN);
+
+  let gutterHtml='', lineHtml='';
+  for(let m=Math.ceil(gridStart/60)*60; m<=gridEnd; m+=60){
+    const top=(m-gridStart)*PXMIN;
+    gutterHtml+=`<div class="grid-gutter-label" style="top:${top}px">${fmtTime(m)}</div>`;
+    lineHtml+=`<div class="grid-hour-line" style="top:${top}px"></div>`;
+  }
+
+  const nowMin = new Date().getHours()*60+new Date().getMinutes();
+  const nowHtml = (nowMin>=gridStart && nowMin<=gridEnd)
+    ? `<div class="grid-now-line" style="top:${(nowMin-gridStart)*PXMIN}px"><div class="grid-now-dot"></div></div>` : '';
+
+  let blocksHtml='';
+  for(const e of entries){
+    if(e.type==='end') continue;
+    const dur = e.type==='topic' ? e.t.dur : e.dur;
+    if(!dur) continue;
+    const top=(e.time-gridStart)*PXMIN;
+    const height=Math.max(18,dur*PXMIN);
+    let bg,tx,label,cls='';
+    if(e.type==='topic'){
+      const s=S_MAP[e.t.subj]; bg=s.bg; tx=s.tx; label=esc(e.t.name);
+    } else if(e.type==='break'){
+      bg='var(--bg3)'; tx='var(--txt2)'; label=e.emoji+' '+e.label; cls='grid-block-break';
+    } else if(e.type==='appt'){
+      bg='var(--bg3)'; tx='var(--txt)'; label=esc(e.label); cls='grid-block-appt';
+    } else if(e.type==='review'){
+      bg='#dbeafe'; tx='#1e40af'; label='🔄 Wiederholung ('+e.topics.length+')';
+    } else continue;
+    blocksHtml+=`<div class="grid-block ${cls}" style="top:${top}px;height:${height}px;background:${bg};color:${tx}" title="${label} · ${fmtTime(e.time)}–${fmtTime(e.time+dur)}">
+      <div class="grid-block-time">${fmtTime(e.time)}–${fmtTime(e.time+dur)}</div>
+      <div class="grid-block-name">${label}</div>
+    </div>`;
+  }
+
+  return `<div class="grid-row">
+    <div class="grid-gutter" style="height:${totalH}px">${gutterHtml}</div>
+    <div class="plan-grid" style="height:${totalH}px">${lineHtml}${nowHtml}${blocksHtml}</div>
+  </div>`;
+}
+
 function renderPlan(){
+  const prefs=getDayPrefs();
   const entries=generateSchedule();
   _planEntries=entries;
-  const maxDur=Math.max(...entries.filter(e=>e.type==='topic').map(e=>e.t.dur),60);
   const totalStudy=entries.filter(e=>e.type==='topic').reduce((a,e)=>a+e.t.dur,0);
-  const totalMins=entries[entries.length-1].time - entries[0].time;
 
   document.getElementById('plan-date').textContent=
     new Date().toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long'})+
     ' · ~'+Math.round(totalStudy/60*10)/10+'h Lernzeit';
 
-  document.getElementById('plan-content').innerHTML=entries.map(e=>{
-    if(e.type==='topic'){
-      const s=S_MAP[e.t.subj], pct=getPct(e.t.id), col=scoreCol(e.t.score);
-      const barW=Math.round(e.t.dur/maxDur*100);
-      const wDots=Array.from({length:5},(_,i)=>
-        `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:${i<e.t.w?s.color:'var(--bg3)'}"></span>`).join('');
-      return`<div class="plan-entry">
-        <div class="plan-time">${fmtTime(e.time)}</div>
-        <div class="plan-body">
-          <div style="display:flex;align-items:center;gap:6px">
-            <span style="background:${s.bg};color:${s.tx};padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;flex-shrink:0">${s.short}</span>
-            <span class="plan-label">${e.t.name}</span>
-          </div>
-          <div class="plan-sub">${e.t.grp} · ${e.t.dur}min · ${pct}% erledigt · ${wDots}</div>
-          <div class="plan-dur-bar" style="width:${barW}%;background:${col}40;border:1px solid ${col}60"></div>
-        </div>
-        <div style="font-size:18px;font-weight:800;color:${col};flex-shrink:0;padding-top:2px">${Math.round(e.t.dur/60*10)/10}h</div>
-      </div>`;
-    }
-    if(e.type==='break') return`<div class="plan-entry plan-break">
-      <div class="plan-time">${fmtTime(e.time)}</div>
-      <div class="plan-body"><div class="plan-label">${e.emoji} ${e.label}</div>
-      <div class="plan-sub">${e.dur} Minuten</div></div>
-    </div>`;
-    if(e.type==='appt') return`<div class="plan-entry plan-appt">
-      <div class="plan-time">${fmtTime(e.time)}</div>
-      <div class="plan-body"><div class="plan-label">${esc(e.label)}</div>
-      <div class="plan-sub">${e.dur} Minuten · fest eingeplant</div></div>
-    </div>`;
-    if(e.type==='review'){
-      const names=e.topics.slice(0,4).map(t=>{
-        const s=S_MAP[t.subj];
-        return`<span style="background:${s.bg};color:${s.tx};padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700">${s.short}</span> ${t.name}`;
-      }).join('<br>');
-      return`<div class="plan-entry">
-        <div class="plan-time">${fmtTime(e.time)}</div>
-        <div class="plan-body">
-          <div class="plan-label">🔄 Wiederholung</div>
-          <div class="plan-sub" style="margin-top:4px;line-height:1.8">${names}${e.topics.length>4?`<br><span style="color:var(--txt3)">+${e.topics.length-4} weitere</span>`:''}</div>
-          <div class="plan-dur-bar" style="width:60%;background:#93c5fd40;border:1px solid #93c5fd60"></div>
-        </div>
-        <div style="font-size:18px;font-weight:800;color:#60a5fa;flex-shrink:0;padding-top:2px">${Math.round(e.dur/60*10)/10}h</div>
-      </div>`;
-    }
-    if(e.type==='end') return`<div class="plan-entry plan-break">
-      <div class="plan-time">${fmtTime(e.time)}</div>
-      <div class="plan-body"><div class="plan-label">🌙 Feierabend</div></div>
-    </div>`;
-    return'';
-  }).join('');
+  document.getElementById('plan-content').innerHTML = renderPlanGrid(entries, prefs);
 }
 
 function planToText(){
@@ -978,7 +1008,9 @@ function copyPlan(){
 }
 
 function openPlan(){
-  document.getElementById('daystart-input').value = fmtTime(getDayPrefs().start);
+  const prefs=getDayPrefs();
+  document.getElementById('daystart-input').value = fmtTime(prefs.start);
+  document.getElementById('dayend-input').value = fmtTime(prefs.end);
   renderApptSection();
   renderPlan();
   document.getElementById('plan-bg').classList.add('open');
