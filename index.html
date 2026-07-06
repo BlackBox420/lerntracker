@@ -351,6 +351,7 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
           style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
       </div>
     </div>
+    <div id="meals-section" style="margin-bottom:14px"></div>
     <div id="appt-section" style="margin-bottom:14px"></div>
     <div id="plan-content"></div>
     <button class="copy-btn" id="copy-btn" onclick="copyPlan()">📋 Als Text kopieren</button>
@@ -618,6 +619,8 @@ let halfLife     = JSON.parse(localStorage.getItem('lt-hl')||'{}');
 let cardProgress = JSON.parse(localStorage.getItem('lt-cp')||'{}');
 let filter     = 'all';       // aktueller Fach-Filter in der Prioritätsliste ('all' oder ein subjId)
 let expanded   = new Set();   // Set der topicIds, deren Zeile in der Liste gerade aufgeklappt ist
+let cardsExpanded = new Set(); // dieselbe Klapplogik für Themen-Zeilen im Karteikarten-Tab
+let cardsSubjExpanded = new Set(); // + zusätzlich pro Fach klappbar
 
 // save*(): state -> localStorage schreiben, danach (falls sync=true, der Default)
 // einen Cloud-Sync-Push anstoßen (debouncedPush(), siehe Abschnitt "Cloud-Sync").
@@ -927,8 +930,13 @@ function renderFilterBar(){
   document.getElementById('filter-bar').innerHTML=chips.map(f=>{
     const active=filter===f.id;
     const col=f.id==='all'?'var(--txt)':S_MAP[f.id].color;
+    // Der "Alle"-Chip nutzt var(--txt) als Hintergrund (schwarz im Hellmodus,
+    // fast weiss im Dunkelmodus) — Text fest auf #fff zu setzen ergab im
+    // Dunkelmodus weiss auf weiss. var(--bg) ist in beiden Themes der jeweilige
+    // Kontrast dazu, bei den Fach-Chips (feste Hex-Farbe) bleibt #fff korrekt.
+    const txtCol=f.id==='all'?'var(--bg)':'#fff';
     return`<button class="fchip" onclick="setFilter('${f.id}')"
-      style="${active?`background:${col};color:#fff;border-color:${col}`:''}">
+      style="${active?`background:${col};color:${txtCol};border-color:${col}`:''}">
       ${f.id==='all'?f.label:esc(f.short)}
     </button>`;
   }).join('');
@@ -1213,8 +1221,9 @@ function estimateDur(t){
 
 // ── Tagesplan-Einstellungen & Termine ──────────────────────────────────────────
 // dayPrefs (localStorage 'lt-dayprefs') = persönliche, dauerhaft gespeicherte
-// Tages-Eckwerte: start/end (wann der Plan beginnt/endet) sowie feste lunch/
-// dinner-Zeiten — alle Werte in Minuten seit Mitternacht, siehe fmtTime()/toMin().
+// Tages-Eckwerte: start/end (wann der Plan beginnt/endet) sowie meals (Frühstück/
+// Mittag-/Abendessen, jeweils einzeln an-/abschaltbar mit eigener Uhrzeit) —
+// alle Zeiten in Minuten seit Mitternacht, siehe fmtTime()/toMin().
 // appointments (localStorage 'lt-appointments') sind dagegen TAGESAKTUELL: pro
 // Datum (todayStr()) eine eigene Liste, die nach ein paar Tagen automatisch
 // aufgeräumt wird (siehe saveTodayAppointments). Wird beim ersten Öffnen des
@@ -1222,10 +1231,73 @@ function estimateDur(t){
 
 function toMin(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
 
+const MEAL_DEFAULTS = {
+  breakfast: {enabled:false, time:420,  dur:20},
+  lunch:     {enabled:true,  time:750,  dur:60},
+  dinner:    {enabled:true,  time:1140, dur:30},
+};
+const MEAL_LABELS = {breakfast:'🍳 Frühstück', lunch:'🍽️ Mittagspause', dinner:'🍽️ Abendbrot'};
+
+// Migriert das alte Format (lunch/dinner als blanke Zahlen, keine dritte
+// Mahlzeit, nicht abschaltbar) auf das neue meals-Objekt — bestehende
+// Lunch-/Dinner-Zeiten bleiben dabei erhalten, Frühstück ist neu und startet
+// deaktiviert, damit sich am Tagesplan nichts ändert, bis man es selbst aktiviert.
 function getDayPrefs(){
-  return JSON.parse(localStorage.getItem('lt-dayprefs')||'{"start":420,"end":1260,"lunch":750,"dinner":1140}');
+  const raw=JSON.parse(localStorage.getItem('lt-dayprefs')||'null');
+  if(!raw) return {start:420,end:1260,meals:JSON.parse(JSON.stringify(MEAL_DEFAULTS))};
+  if(!raw.meals){
+    return {
+      start: raw.start??420, end: raw.end??1260,
+      meals: {
+        breakfast: {...MEAL_DEFAULTS.breakfast},
+        lunch:     {enabled:true, time: raw.lunch??MEAL_DEFAULTS.lunch.time, dur:60},
+        dinner:    {enabled:true, time: raw.dinner??MEAL_DEFAULTS.dinner.time, dur:30},
+      }
+    };
+  }
+  return raw;
 }
 function saveDayPrefs(p){ localStorage.setItem('lt-dayprefs', JSON.stringify(p)); }
+
+// Checkbox "Mahlzeit an/aus" bzw. Uhrzeit-Eingabe im Tagesplan-Modal.
+function toggleMealEnabled(key, enabled){
+  const p=getDayPrefs();
+  p.meals[key].enabled=enabled;
+  saveDayPrefs(p);
+  // Zeit-Eingabefeld muss beim Umschalten mit-aktualisiert werden (disabled-
+  // Zustand hängt an m.enabled), sonst bliebe es nach dem Anhaken weiter
+  // ausgegraut, obwohl die Checkbox selbst schon aktiv ist.
+  const timeEl=document.getElementById('meal-time-'+key);
+  if(timeEl) timeEl.disabled=!enabled;
+  renderPlan();
+}
+function saveMealTime(key, hhmm){
+  if(!hhmm) return;
+  const p=getDayPrefs();
+  p.meals[key].time=toMin(hhmm);
+  saveDayPrefs(p);
+  renderPlan();
+}
+
+// Baut die drei Mahlzeiten-Zeilen (Frühstück/Mittag-/Abendessen) im Tagesplan-
+// Modal: Checkbox zum An-/Abschalten + Uhrzeit-Eingabe, die nur bei
+// aktivierter Mahlzeit editierbar ist.
+function renderMealsSection(){
+  const el=document.getElementById('meals-section');
+  if(!el) return;
+  const p=getDayPrefs();
+  const rows=['breakfast','lunch','dinner'].map(key=>{
+    const m=p.meals[key];
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+      <input type="checkbox" id="meal-en-${key}" ${m.enabled?'checked':''} onchange="toggleMealEnabled('${key}',this.checked)">
+      <label for="meal-en-${key}" style="flex:1;font-size:12px;color:var(--txt)">${MEAL_LABELS[key]}</label>
+      <input type="time" id="meal-time-${key}" value="${fmtTime(m.time)}" ${m.enabled?'':'disabled'}
+        onchange="saveMealTime('${key}',this.value)"
+        style="padding:6px 8px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
+    </div>`;
+  }).join('');
+  el.innerHTML=`<div class="sec-hdr" style="margin-bottom:4px">Mahlzeiten</div>${rows}`;
+}
 // Beginn-Zeit-Eingabe im Tagesplan-Modal: validiert, dass Beginn vor Ende liegt.
 function saveDayStart(hhmm){
   if(!hhmm) return;
@@ -1321,12 +1393,17 @@ function renderApptSection(){
 // überlappende/direkt aneinandergrenzende zu einem einzigen Intervall. Wird
 // benutzt, um Termine + Mittag-/Abendpause zu einer sauberen, überlappungsfreien
 // Liste "fester Blöcke" zusammenzuführen, bevor die Lernzeit drumherum verplant wird.
+// Labels werden beim Verschmelzen zusammengeführt statt verworfen (z.B. ein
+// Ad-hoc-Termin direkt gefolgt von der Mittagspause ohne Lücke dazwischen) —
+// sonst verschwindet das zweite Label spurlos im Tagesplan.
 function mergeIntervals(list){
   const sorted=[...list].sort((a,b)=>a.start-b.start);
   const out=[];
   for(const iv of sorted){
     if(out.length && iv.start<=out[out.length-1].end){
-      out[out.length-1].end=Math.max(out[out.length-1].end, iv.end);
+      const last=out[out.length-1];
+      last.end=Math.max(last.end, iv.end);
+      if(iv.label && iv.label!==last.label) last.label = last.label ? `${last.label} + ${iv.label}` : iv.label;
     } else out.push({...iv});
   }
   return out;
@@ -1356,10 +1433,15 @@ function generateSchedule(){
   const prefs=getDayPrefs();
   const appts=(getTodayAppointments()||[]).map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
   const cardMin=estimatedCardMinutesPerDay();
+  // Mahlzeiten kommen jetzt aus prefs.meals statt fixer lunch/dinner-Werte —
+  // jede der drei (Frühstück/Mittag-/Abendessen) ist einzeln an-/abschaltbar
+  // und hat eine selbst gewählte Uhrzeit (siehe renderMealsSection()).
+  const mealBlocks=Object.entries(prefs.meals)
+    .filter(([,m])=>m.enabled)
+    .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key]}));
   const fixed=mergeIntervals([
     ...appts.map(a=>({...a, label:'📌 '+a.label})),
-    {start:prefs.lunch,end:prefs.lunch+60,label:'🍽️ Mittagspause'},
-    {start:prefs.dinner,end:prefs.dinner+30,label:'🍽️ Abendbrot'},
+    ...mealBlocks,
     ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[])
   ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
 
@@ -1540,6 +1622,7 @@ function openPlan(){
   const prefs=getDayPrefs();
   document.getElementById('daystart-input').value = fmtTime(prefs.start);
   document.getElementById('dayend-input').value = fmtTime(prefs.end);
+  renderMealsSection();
   renderApptSection();
   renderPlan();
   document.getElementById('plan-bg').classList.add('open');
@@ -1569,26 +1652,38 @@ function setTab(tab){
 // um die Eingabe nicht doppelt vorzuhalten). Gruppiert wie renderStatsView()
 // nach Fach, zeigt aber nur Themen mit zugeordnetem Kartenset, inkl. des
 // "Heute gemacht/Gewusst"-Formulars direkt hier.
+function toggleCardsExpand(id){
+  cardsExpanded.has(id)?cardsExpanded.delete(id):cardsExpanded.add(id);
+  renderCardsView();
+}
+function toggleCardsSubjExpand(sid){
+  cardsSubjExpanded.has(sid)?cardsSubjExpanded.delete(sid):cardsSubjExpanded.add(sid);
+  renderCardsView();
+}
+
 function renderCardsView(){
   const subjOrder=[...SUBJECTS].sort((a,b)=>new Date(a.examDate)-new Date(b.examDate)).map(s=>s.id);
   const html=subjOrder.map(sid=>{
     const s=S_MAP[sid];
     const topics=TOPICS.filter(t=>t.subj===sid && getCardTotal(t.id)>0);
     if(topics.length===0) return '';
-    const rows=topics.map(t=>{
+    const isSubjExp=cardsSubjExpanded.has(sid);
+    const rows=!isSubjExp?'':topics.map(t=>{
       const total=getCardTotal(t.id);
       const cp=getCardProgress(t.id);
       const mastery=cardMasteryPct(t.id);
       const pct=total?Math.round(cp.introduced/total*100):0;
-      return`<div style="padding:10px 0;border-bottom:.5px solid var(--border)">
+      const isExp=cardsExpanded.has(t.id);
+      return`<div style="padding:10px 0;border-bottom:.5px solid var(--border);cursor:pointer" onclick="toggleCardsExpand('${t.id}')">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <span style="font-size:13px;font-weight:600">${esc(t.name)}</span>
-          <span style="font-size:11px;color:var(--txt2)">${cp.introduced}/${total} gesehen · ≈${Math.round(mastery)}%</span>
+          <span style="font-size:11px;color:var(--txt2);display:flex;align-items:center;gap:6px">${cp.introduced}/${total} gesehen · ≈${Math.round(mastery)}%<span style="color:var(--txt3)">${isExp?'▾':'▸'}</span></span>
         </div>
-        <div class="stats-bar-track" style="margin-bottom:8px">
+        <div class="stats-bar-track" style="margin-bottom:${isExp?'8px':'0'}">
           <div class="stats-bar-fill" style="width:${pct}%;background:#007aff"></div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        ${isExp?`<div onclick="event.stopPropagation()">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;margin-top:8px">
           <input type="number" min="0" id="cs-neu-${t.id}" placeholder="Neu"
             style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
           <input type="number" min="0" id="cs-review-${t.id}" placeholder="Wiederholt"
@@ -1600,12 +1695,14 @@ function renderCardsView(){
           <button style="padding:6px 10px;border-radius:7px;border:none;background:#007aff;color:#fff;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0"
             onclick="submitCardSession('${t.id}')">Eintragen</button>
         </div>
+        </div>`:''}
       </div>`;
     }).join('');
     return`<div class="stats-subj">
-      <div class="stats-subj-hdr" style="border-color:${s.color}">
+      <div class="stats-subj-hdr" style="border-color:${s.color};cursor:pointer" onclick="toggleCardsSubjExpand('${sid}')">
         <span class="stats-subj-name" style="color:${s.color}">${esc(s.name)}</span>
         <span class="stats-subj-badge" style="background:${s.bg};color:${s.tx}">${esc(s.short)}</span>
+        <span style="margin-left:auto;color:var(--txt3);font-size:11px">${isSubjExp?'▾':'▸'}</span>
       </div>
       ${rows}
     </div>`;
