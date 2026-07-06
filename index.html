@@ -745,16 +745,34 @@ function getAvailableMinutesPerDay(){
   return Math.max(60,(p.end-p.start)-90);
 }
 
+// Geschätzter GESAMT-Lernaufwand eines Themas (nicht nur eine Sitzung wie
+// estimateDur()!), um von 0% auf 100% zu kommen: Basis-Sitzungslänge mal
+// geschätzter Anzahl Sitzungen bis zur vollen Beherrschung — schwierigere Themen
+// brauchen mehr Wiederholungen, nicht nur eine längere einzelne Sitzung. Nur für
+// subjectPressure() gedacht (Restaufwand-Schätzung), estimateDur() bleibt für die
+// Sitzungslänge im Tagesplan unverändert.
+function totalEffortMinutes(t){
+  const s=S_MAP[t.subj];
+  const base = t.w>=5?120 : t.w===4?90 : t.w===3?60 : 45;
+  const sessions = 2+(t.d||3); // d:1→3, d:3→5, d:5→7 Sitzungen bis zur vollen Beherrschung
+  const total = base*sessions;
+  return s.openBook ? total*0.65 : total;
+}
+
 // Pensum-Druck eines Fachs nach dem Least-Laxity-Prinzip aus dem Echtzeit-Scheduling
 // (Liu & Layland, 1973: ein Terminplan ist nur schaffbar, wenn Σ(benötigte Zeit/verfügbare
-// Zeit) über alle Aufgaben ≤ 1 bleibt). Übertragen auf ein Fach: benötigte Restlernzeit
-// (nur noch offene, nicht im Review-Stadium befindliche Themen) geteilt durch Tage bis
-// zur Prüfung, ins Verhältnis zur täglich verfügbaren Lernzeit gesetzt. >1 heißt: selbst
-// bei täglichem Volleinsatz reicht die Zeit nicht mehr — unabhängig davon, ob die Prüfung
-// laut daysUntil() allein noch "entspannt" weit weg wirkt (siehe dayUrgency in calcScore()).
+// Zeit) über alle Aufgaben ≤ 1 bleibt). Übertragen auf ein Fach: benötigter GESAMT-
+// Restaufwand (totalEffortMinutes() × Lücke zum Ziel, über alle noch offenen, nicht im
+// Review-Stadium befindlichen Themen) geteilt durch Tage bis zur Prüfung, ins Verhältnis
+// zur täglich verfügbaren Lernzeit gesetzt. >1 heißt: selbst bei täglichem Volleinsatz
+// reicht die Zeit nicht mehr — unabhängig davon, ob die Prüfung laut daysUntil() allein
+// noch "entspannt" weit weg wirkt (siehe dayUrgency in calcScore()).
 function subjectPressure(subjId){
   const topics=TOPICS.filter(t=>t.subj===subjId && !isReviewTopic(t) && getPct(t.id)<100);
-  const remainingMin=topics.reduce((sum,t)=>sum+estimateDur(t),0);
+  const remainingMin=topics.reduce((sum,t)=>{
+    const gap=Math.max(0,1-getPct(t.id)/100);
+    return sum+totalEffortMinutes(t)*gap;
+  },0);
   const days=Math.max(1,daysUntil(S_MAP[subjId].examDate));
   return (remainingMin/days)/getAvailableMinutesPerDay();
 }
@@ -1298,25 +1316,35 @@ function mergeIntervals(list){
   return out;
 }
 
+// Grobe Schätzung, wie viele Minuten am Tag für externe Karteikarten-Praxis
+// (Anki/Noji/Papier, siehe CARDSETS) draufgehen: Summe der "neue Karten/Tag"-
+// Ziele über alle Sets, mit ~1 Minute pro Karte veranschlagt. Rein aus den
+// bestehenden Einstellungen abgeleitet, keine zusätzliche Konfiguration nötig.
+function estimatedCardMinutesPerDay(){
+  return CARDSETS.reduce((sum,cs)=>sum+(cs.newPerDay||0),0);
+}
+
 // Baut den Tagesplan als flache Liste von "entries" (in zeitlicher Reihenfolge),
 // die renderPlanGrid() später als Kalenderblöcke zeichnet und planToText() als
 // Text exportiert. Jeder Eintrag hat mindestens {type, time} (Minuten seit
 // Mitternacht); je nach type kommen weitere Felder dazu:
 //   'topic'  {t: Thema-Objekt inkl. .dur}      — eine Lerneinheit
 //   'break'  {emoji, label, dur}               — kurze Pause (alle ~90min Lernzeit)
-//   'appt'   {label, dur}                      — fester Termin oder Mahlzeit
+//   'appt'   {label, dur}                      — fester Termin, Mahlzeit oder Karteikarten-Zeit
 //   'review' {topics: [...], dur}              — gesammelter Wiederholungs-Block
 //   'end'    {}                                — Markierung "Feierabend"
-// Ablauf: 1) feste Blöcke (Termine+Mahlzeiten) chronologisch durchgehen und die
-// Lücken dazwischen mit fillWindow() auffüllen, 2) danach ggf. noch ein
-// Wiederholungs-Block ans Ende, falls Zeit übrig ist.
+// Ablauf: 1) feste Blöcke (Termine+Mahlzeiten+Karteikarten-Zeit) chronologisch
+// durchgehen und die Lücken dazwischen mit fillWindow() auffüllen, 2) danach ggf.
+// noch ein Wiederholungs-Block ans Ende, falls Zeit übrig ist.
 function generateSchedule(){
   const prefs=getDayPrefs();
   const appts=(getTodayAppointments()||[]).map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
+  const cardMin=estimatedCardMinutesPerDay();
   const fixed=mergeIntervals([
     ...appts.map(a=>({...a, label:'📌 '+a.label})),
     {start:prefs.lunch,end:prefs.lunch+60,label:'🍽️ Mittagspause'},
-    {start:prefs.dinner,end:prefs.dinner+30,label:'🍽️ Abendbrot'}
+    {start:prefs.dinner,end:prefs.dinner+30,label:'🍽️ Abendbrot'},
+    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[])
   ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
 
   const bySubj={};
