@@ -1089,23 +1089,27 @@ function markReview(id, success=true){
   renderTopicList();
 }
 
-// Trägt eine Karteikarten-Sitzung für heute ein (done Karten gemacht, davon known
-// gewusst — z.B. aus Anki/Noji/Papier). Schreibt cardProgress[id] fort (introduced
-// kumulativ gedeckelt bei getCardTotal(), emaKnown exponentiell geglättet mit α=0.3,
-// d.h. neuere Tage zählen mehr, ohne ältere Historie komplett zu verwerfen) und nutzt
-// die tatsächlich beobachtete Erfolgsquote als p in updateHalfLife() — eine bessere
-// Grundlage als die modellierte Schätzung aus retention(), da wirklich gemessen statt
-// geschätzt. Schwelle 70% statt der sonst üblichen 90%-Zielretention, weil das hier
-// eine grobe Tageszusammenfassung über viele Karten ist, kein Einzelkarten-Urteil.
-function logCardSession(id, done, known){
+// Trägt eine Karteikarten-Sitzung für heute ein. Unterscheidet bewusst zwischen
+// neuDone (heute zum ERSTEN Mal gesehene Karten — erhöht introduced) und
+// reviewDone (Wiederholungen bereits eingeführter Karten — zählt NICHT nochmal
+// als "gesehen", sonst würde reines Wiederholen den Fortschritt künstlich aufblähen,
+// als hätte man neuen Stoff gelernt). known bezieht sich auf beide zusammen
+// (neuDone+reviewDone), fließt in emaKnown (exponentiell geglättet mit α=0.3, d.h.
+// neuere Tage zählen mehr) und als tatsächlich beobachtete Erfolgsquote in
+// updateHalfLife() ein — eine bessere Grundlage als die modellierte Schätzung aus
+// retention(), da wirklich gemessen statt geschätzt. Schwelle 70% statt der sonst
+// üblichen 90%-Zielretention, weil das hier eine grobe Tageszusammenfassung über
+// viele Karten ist, kein Einzelkarten-Urteil.
+function logCardSession(id, neuDone, reviewDone, known){
   const total=getCardTotal(id);
+  const done=neuDone+reviewDone;
   if(total<=0||done<=0) return;
   const t=T_MAP[id];
   const knownPct=Math.max(0,Math.min(1,known/done));
   const cp=getCardProgress(id);
   const ALPHA=0.3;
   cardProgress[id]={
-    introduced: Math.min(total, cp.introduced+done),
+    introduced: Math.min(total, cp.introduced+neuDone),
     emaKnown: cp.lastLogDate ? ALPHA*knownPct+(1-ALPHA)*cp.emaKnown : knownPct,
     lastLogDate: todayStr(),
   };
@@ -1114,16 +1118,19 @@ function logCardSession(id, done, known){
   refreshAll();
 }
 
-// Liest die beiden Eingabefelder im "🗂️ Karteikarten"-Mini-Formular einer aufgeklappten
-// Themenzeile aus und ruft logCardSession() auf.
+// Liest die drei Eingabefelder im "🗂️ Karteikarten"-Formular aus und ruft
+// logCardSession() auf.
 function submitCardSession(id){
-  const doneEl=document.getElementById('cs-done-'+id);
+  const neuEl=document.getElementById('cs-neu-'+id);
+  const reviewEl=document.getElementById('cs-review-'+id);
   const knownEl=document.getElementById('cs-known-'+id);
-  const done=parseInt(doneEl.value)||0;
+  const neuDone=parseInt(neuEl.value)||0;
+  const reviewDone=parseInt(reviewEl.value)||0;
   const known=parseInt(knownEl.value)||0;
-  if(done<=0){ alert('Bitte eintragen, wie viele Karten heute gemacht wurden.'); return; }
+  const done=neuDone+reviewDone;
+  if(done<=0){ alert('Bitte eintragen, wie viele Karten heute gemacht wurden (neu und/oder wiederholt).'); return; }
   if(known>done){ alert('Gewusst kann nicht mehr sein als gemacht.'); return; }
-  logCardSession(id, done, known);
+  logCardSession(id, neuDone, reviewDone, known);
 }
 
 // Während der Fortschritts-Regler gezogen wird (noch nicht gespeichert).
@@ -1572,10 +1579,14 @@ function renderCardsView(){
         <div class="stats-bar-track" style="margin-bottom:8px">
           <div class="stats-bar-fill" style="width:${pct}%;background:#007aff"></div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <input type="number" min="0" max="${total}" id="cs-done-${t.id}" placeholder="Heute gemacht"
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <input type="number" min="0" id="cs-neu-${t.id}" placeholder="Neu"
             style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
-          <input type="number" min="0" id="cs-known-${t.id}" placeholder="Gewusst"
+          <input type="number" min="0" id="cs-review-${t.id}" placeholder="Wiederholt"
+            style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" min="0" id="cs-known-${t.id}" placeholder="Davon gewusst"
             style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
           <button style="padding:6px 10px;border-radius:7px;border:none;background:#007aff;color:#fff;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0"
             onclick="submitCardSession('${t.id}')">Eintragen</button>
