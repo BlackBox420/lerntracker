@@ -316,6 +316,7 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
     <div class="exam-bar" id="exam-bar"></div>
     <div class="tab-bar">
       <button class="tab-btn active" onclick="setTab('overview')" id="tabbtn-overview">Übersicht</button>
+      <button class="tab-btn" onclick="setTab('cards')" id="tabbtn-cards">🗂️ Karteikarten</button>
       <button class="tab-btn" onclick="setTab('stats')" id="tabbtn-stats">📊 Statistik</button>
     </div>
     <div id="tab-overview">
@@ -323,6 +324,9 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
       <div class="filter-bar" id="filter-bar"></div>
       <div class="sec-hdr">Prioritätsliste</div>
       <div id="topic-list"></div>
+    </div>
+    <div id="tab-cards" style="display:none">
+      <div id="cards-content"></div>
     </div>
     <div id="tab-stats" style="display:none">
       <div id="stats-content"></div>
@@ -932,7 +936,6 @@ function renderTopicList(){
     const dDots=Array.from({length:5},(_,di)=>
       `<div class="w-dot" style="background:${di<(t.d||3)?'#ff9500':'var(--bg3)'}"></div>`).join('');
     const sliderBg=`linear-gradient(to right,${col} ${pct}%,var(--bg3) ${pct}%)`;
-    const cardTotal=getCardTotal(t.id);
 
     return`<div class="t-row" id="tr-${t.id}" onclick="toggleExpand('${t.id}')">
       <div class="t-row-main">
@@ -983,22 +986,6 @@ function renderTopicList(){
             :`<button style="flex:1;padding:7px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:#34c759;color:#fff" onclick="event.stopPropagation();markReview('${t.id}',true)">✓ Gewusst</button>
               <button style="flex:1;padding:7px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:#ff3b30;color:#fff" onclick="event.stopPropagation();markReview('${t.id}',false)">✗ Vergessen</button>`
           }
-        </div>`:''}
-        ${cardTotal>0?`<div style="margin-top:10px;padding-top:10px;border-top:.5px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <span class="ctrl-lbl">🗂️ Karteikarten (${getCardProgress(t.id).introduced}/${cardTotal})</span>
-            <span style="font-size:11px;font-weight:700;color:var(--txt2)">≈${Math.round(cardMasteryPct(t.id))}% (ergänzend)</span>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input type="number" min="0" max="${cardTotal}" id="cs-done-${t.id}" placeholder="Heute gemacht"
-              style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px"
-              onclick="event.stopPropagation()">
-            <input type="number" min="0" id="cs-known-${t.id}" placeholder="Gewusst"
-              style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px"
-              onclick="event.stopPropagation()">
-            <button style="padding:6px 10px;border-radius:7px;border:none;background:#007aff;color:#fff;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0"
-              onclick="event.stopPropagation();submitCardSession('${t.id}')">Eintragen</button>
-          </div>
         </div>`:''}
       </div>`:''}
     </div>`;
@@ -1519,16 +1506,64 @@ function planBgClick(e){ if(e.target===document.getElementById('plan-bg')) close
 
 // ── Statistik ─────────────────────────────────────────────────────────────────
 
-let activeTab='overview'; // 'overview' oder 'stats' — welcher der zwei Reiter aktiv ist
+let activeTab='overview'; // 'overview', 'cards' oder 'stats' — welcher der drei Reiter aktiv ist
 
-// Wechselt zwischen "Übersicht" und "📊 Statistik"-Reiter.
+// Wechselt zwischen "Übersicht", "🗂️ Karteikarten" und "📊 Statistik"-Reiter.
 function setTab(tab){
   activeTab=tab;
   document.getElementById('tab-overview').style.display=tab==='overview'?'':'none';
+  document.getElementById('tab-cards').style.display=tab==='cards'?'':'none';
   document.getElementById('tab-stats').style.display=tab==='stats'?'':'none';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tabbtn-'+tab).classList.add('active');
+  if(tab==='cards') renderCardsView();
   if(tab==='stats') renderStatsView();
+}
+
+// Eigener Reiter für die Karteikarten-Ergänzung (statt nur versteckt in der
+// aufgeklappten Themenzeile, siehe renderTopicList() — dort bewusst entfernt,
+// um die Eingabe nicht doppelt vorzuhalten). Gruppiert wie renderStatsView()
+// nach Fach, zeigt aber nur Themen mit zugeordnetem Kartenset, inkl. des
+// "Heute gemacht/Gewusst"-Formulars direkt hier.
+function renderCardsView(){
+  const subjOrder=[...SUBJECTS].sort((a,b)=>new Date(a.examDate)-new Date(b.examDate)).map(s=>s.id);
+  const html=subjOrder.map(sid=>{
+    const s=S_MAP[sid];
+    const topics=TOPICS.filter(t=>t.subj===sid && getCardTotal(t.id)>0);
+    if(topics.length===0) return '';
+    const rows=topics.map(t=>{
+      const total=getCardTotal(t.id);
+      const cp=getCardProgress(t.id);
+      const mastery=cardMasteryPct(t.id);
+      const pct=total?Math.round(cp.introduced/total*100):0;
+      return`<div style="padding:10px 0;border-bottom:.5px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600">${esc(t.name)}</span>
+          <span style="font-size:11px;color:var(--txt2)">${cp.introduced}/${total} gesehen · ≈${Math.round(mastery)}%</span>
+        </div>
+        <div class="stats-bar-track" style="margin-bottom:8px">
+          <div class="stats-bar-fill" style="width:${pct}%;background:#007aff"></div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" min="0" max="${total}" id="cs-done-${t.id}" placeholder="Heute gemacht"
+            style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
+          <input type="number" min="0" id="cs-known-${t.id}" placeholder="Gewusst"
+            style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
+          <button style="padding:6px 10px;border-radius:7px;border:none;background:#007aff;color:#fff;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0"
+            onclick="submitCardSession('${t.id}')">Eintragen</button>
+        </div>
+      </div>`;
+    }).join('');
+    return`<div class="stats-subj">
+      <div class="stats-subj-hdr" style="border-color:${s.color}">
+        <span class="stats-subj-name" style="color:${s.color}">${esc(s.name)}</span>
+        <span class="stats-subj-badge" style="background:${s.bg};color:${s.tx}">${esc(s.short)}</span>
+      </div>
+      ${rows}
+    </div>`;
+  }).filter(Boolean).join('')
+    || `<div class="all-done-msg" style="color:var(--txt2);font-style:normal">Noch keine Karteikarten-Sets angelegt. Füge welche über "Verwalten" hinzu.</div>`;
+  document.getElementById('cards-content').innerHTML=html;
 }
 
 // Ein Fortschrittsbalken pro Thema, gruppiert nach Fach (nach Prüfungsdatum
@@ -1652,6 +1687,7 @@ function _connectSync(key){
       if(data.cs){CARDSETS=data.cs;saveCardsets(false);}
       updateOnboardingState();
       renderExamBar(); renderDayCard(); renderFilterBar(); renderTopicList(); renderManage();
+      if(activeTab==='cards') renderCardsView();
       if(activeTab==='stats') renderStatsView();
       syncStatus('↓ '+new Date().toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'}),true);
     });
@@ -1731,6 +1767,7 @@ function importData(){
     closeModal();
     updateOnboardingState();
     renderExamBar(); renderDayCard(); renderFilterBar(); renderTopicList(); renderManage();
+    if(activeTab==='cards') renderCardsView();
     if(activeTab==='stats') renderStatsView();
     alert('✓ Import erfolgreich!');
   }catch(e){
@@ -1794,6 +1831,7 @@ function finishOnboarding(){
 function refreshAll(){
   updateOnboardingState();
   renderExamBar(); renderDayCard(); renderFilterBar(); renderTopicList();
+  if(activeTab==='cards') renderCardsView();
   if(activeTab==='stats') renderStatsView();
   renderManage();
 }
