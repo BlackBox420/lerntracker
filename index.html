@@ -1,3 +1,56 @@
+<!--
+  LERNPLAN (allgemeine Version)
+  ==============================
+  Progressive Web App (PWA) zur Lernpriorisierung für Prüfungen. Single-File-App:
+  der komplette Code (HTML + CSS + JS) liegt in dieser einen index.html, es gibt
+  keine Build-Tools und kein eigenes Backend. Alle Nutzerdaten liegen im
+  localStorage des Browsers; optional lässt sich ein selbst angelegtes Firebase-
+  Realtime-Database-Konto zum Abgleich zwischen mehreren Geräten hinterlegen.
+
+  GRUNDIDEE
+  Jede Person legt eigene Fächer (mit Prüfungsdatum) und Themen (mit Wichtigkeit +
+  Schwierigkeit) an, z.B. über den Einrichtungs-Bildschirm beim ersten Start oder
+  jederzeit über "Verwalten" (🗂️). Ein Score-Algorithmus (Abschnitt "Score" weiter
+  unten) berechnet daraus laufend, welches Thema gerade am dringendsten dran ist:
+  Prüfungstermin, eigener Fortschritt, Motivation, Schwierigkeit und — für als
+  "Auswendiglern-Fach" markierte Fächer — eine Vergessenskurve seit der letzten
+  Wiederholung fließen mit ein.
+
+  AUFBAU DIESER DATEI (von oben nach unten)
+  1. <style>  — CSS, in kommentierte Abschnitte gruppiert (Header, Exam-Bar,
+                Tagesplan-Karte, Themenliste, Modals, Kalenderraster, Verwalten-
+                Formulare, Statistik). Jeder Abschnitt beginnt mit /* Name */.
+  2. <body>   — HTML-Grundgerüst: Header mit den drei Kopf-Buttons (Kurz erklärt /
+                Verwalten / Tagesplan / Motivation), darunter entweder die
+                Einrichtungs-Ansicht (onboarding-wrap, solange keine Fächer
+                angelegt sind) oder die eigentliche App (app-wrap). Danach folgen
+                alle Bottom-Sheet-Modals (Tagesplan, Motivation/Sync, Verwalten,
+                Kurz-erklärt-Tutorial).
+  3. <script> — die eigentliche Logik, in Abschnitte gegliedert (jeweils mit
+                "// ── Name ──" markiert):
+       Data           Fächer/Themen (Nutzerdaten, in localStorage) + Farb-Palette
+                       für neu angelegte Fächer + kleine Hilfsfunktionen (genId, esc)
+       State           Fortschritt/Motivation/Wiederholungs-Status je Thema/Fach
+       Score           Priorisierungs-Algorithmus — das Herzstück der App
+       Render          erzeugt das HTML für Übersicht, Prioritätsliste, Motivation
+       Actions         Klick-/Eingabe-Handler, die den State ändern und neu rendern
+       Tagesplan       automatischer Tagesplan (feste Termine, Fach-Rotation,
+                       Kalenderraster-Darstellung im Outlook-Stil)
+       Statistik       Fortschritts-Übersicht pro Fach
+       Cloud-Sync      optionaler Abgleich über eine selbst angelegte Firebase-DB
+       Export/Import   manuelle textbasierte Datenübertragung ohne Cloud
+       Verwalten       Fächer/Themen anlegen, bearbeiten, löschen (inkl. Einrichtung)
+       Init            Startpunkt der App, wird ganz am Ende der Datei aufgerufen
+
+  DATENFLUSS IN KÜRZE
+  Jede Aktion (Regler bewegen, Häkchen setzen, Fach anlegen, ...) läuft nach dem
+  immer gleichen Muster:
+    State-Variable ändern -> save*()-Funktion (schreibt nach localStorage,
+    stößt bei Bedarf Cloud-Sync an) -> betroffene render*()-Funktion(en) erneut
+    aufrufen, um die Anzeige zu aktualisieren.
+  Es gibt kein Framework/Virtual DOM — jede render*()-Funktion baut ihren Teil
+  des HTML als Text komplett neu zusammen und setzt ihn per element.innerHTML.
+-->
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -199,6 +252,40 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 .stats-bar-fill{position:absolute;left:0;top:0;height:100%;border-radius:3px;transition:width .3s}
 .stats-bar-m80{position:absolute;left:80%;top:-3px;bottom:-3px;width:2px;background:#ff3b30;opacity:.7;z-index:2;border-radius:1px}
 .stats-bar-pct{font-size:10px;font-weight:700;min-width:30px;text-align:right;font-variant-numeric:tabular-nums}
+
+/* Verwalten (manage subjects/topics) */
+.mg-list{margin-bottom:12px}
+.mg-subj{background:var(--bg2);border-radius:var(--r2);padding:10px;margin-bottom:10px}
+.mg-subj-hdr{display:flex;align-items:center;gap:8px}
+.mg-subj-info{flex:1;min-width:0}
+.mg-subj-name{font-size:13px;font-weight:700}
+.mg-subj-meta{font-size:10px;color:var(--txt2);margin-top:1px}
+.mg-subj-actions{display:flex;gap:4px;flex-shrink:0}
+.mg-icon-btn{width:26px;height:26px;border-radius:50%;border:none;background:var(--bg3);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mg-topics{margin-top:8px;padding-top:8px;border-top:.5px solid var(--border)}
+.mg-topic-row{display:flex;align-items:center;gap:6px;padding:5px 0}
+.mg-topic-body{flex:1;min-width:0}
+.mg-topic-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mg-topic-grp{font-size:9px;color:var(--txt2)}
+.mg-topic-dots{display:flex;gap:6px;flex-shrink:0}
+.mg-add-topic{width:100%;padding:8px;border-radius:8px;border:1.5px dashed var(--border);background:none;color:var(--txt2);font-size:11px;font-weight:600;cursor:pointer;margin-top:4px}
+.mg-form{background:var(--bg);border-radius:8px;padding:10px;margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.mg-field{display:flex;flex-direction:column;gap:3px}
+.mg-field label{font-size:9px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px}
+.mg-field input[type=text],.mg-field input[type=date],.mg-field textarea{width:100%;padding:8px 9px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px}
+.mg-field textarea{resize:none;height:56px;font-family:inherit}
+.mg-field-row{display:flex;gap:8px}
+.mg-field-row .mg-field{flex:1}
+.mg-check-row{display:flex;align-items:center;gap:7px}
+.mg-check-row label{font-size:12px;color:var(--txt);font-weight:500;text-transform:none;letter-spacing:normal}
+.mg-dot-picker{display:flex;gap:6px}
+.mg-dot-btn{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--border);background:var(--bg2);cursor:pointer;font-size:11px;font-weight:700;color:var(--txt2);display:flex;align-items:center;justify-content:center}
+.mg-form-actions{display:flex;gap:8px;margin-top:2px}
+.mg-form-actions button{flex:1;padding:9px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer}
+.mg-btn-save{background:#007aff;color:#fff}
+.mg-btn-cancel{background:var(--bg3);color:var(--txt)}
+.mg-finish-btn{width:100%;padding:14px;border-radius:10px;border:none;background:#34c759;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px}
+.mg-finish-btn:disabled{background:var(--bg3);color:var(--txt3);cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -209,25 +296,37 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
     <div class="hdr-date" id="hdr-date"></div>
   </div>
   <div style="display:flex;gap:8px">
+    <button class="gear-btn" onclick="openHelp()" title="Kurz erklärt">❓</button>
+    <button class="gear-btn" onclick="openManage()" title="Verwalten">🗂️</button>
     <button class="gear-btn" onclick="openPlan()" title="Tagesplan">📅</button>
     <button class="gear-btn" onclick="openModal()" title="Motivation">⚙</button>
   </div>
 </div>
 
 <div class="content">
-  <div class="exam-bar" id="exam-bar"></div>
-  <div class="tab-bar">
-    <button class="tab-btn active" onclick="setTab('overview')" id="tabbtn-overview">Übersicht</button>
-    <button class="tab-btn" onclick="setTab('stats')" id="tabbtn-stats">📊 Statistik</button>
+  <div id="onboarding-wrap" style="display:none">
+    <div style="padding:8px 0 20px">
+      <div style="font-size:20px;font-weight:800;margin-bottom:6px">👋 Willkommen bei Lernplan</div>
+      <div style="font-size:13px;color:var(--txt2);line-height:1.5">Leg dein erstes Fach mit Prüfungsdatum an. Sobald du ein Fach hast, kannst du Themen hinzufügen — mit Wichtigkeit und Schwierigkeit steuerst du, wie die App deine Prioritäten berechnet.</div>
+    </div>
+    <div id="onboarding-content"></div>
+    <button class="mg-finish-btn" id="onboarding-finish-btn" onclick="finishOnboarding()" disabled>✓ Fertig, los geht's!</button>
   </div>
-  <div id="tab-overview">
-    <div id="day-card"></div>
-    <div class="filter-bar" id="filter-bar"></div>
-    <div class="sec-hdr">Prioritätsliste</div>
-    <div id="topic-list"></div>
-  </div>
-  <div id="tab-stats" style="display:none">
-    <div id="stats-content"></div>
+  <div id="app-wrap" style="display:none">
+    <div class="exam-bar" id="exam-bar"></div>
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="setTab('overview')" id="tabbtn-overview">Übersicht</button>
+      <button class="tab-btn" onclick="setTab('stats')" id="tabbtn-stats">📊 Statistik</button>
+    </div>
+    <div id="tab-overview">
+      <div id="day-card"></div>
+      <div class="filter-bar" id="filter-bar"></div>
+      <div class="sec-hdr">Prioritätsliste</div>
+      <div id="topic-list"></div>
+    </div>
+    <div id="tab-stats" style="display:none">
+      <div id="stats-content"></div>
+    </div>
   </div>
 </div>
 
@@ -293,10 +392,69 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
   </div>
 </div>
 
+<div class="modal-bg" id="manage-bg" onclick="manageBgClick(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeManage()">✕</button>
+    <div class="modal-title">Verwalten</div>
+    <div class="modal-sub">Fächer & Themen hinzufügen, bearbeiten, löschen</div>
+    <div id="manage-content"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="help-bg" onclick="helpBgClick(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeHelp()">✕</button>
+    <div class="modal-title">👋 Kurz erklärt</div>
+    <div class="modal-sub">So funktioniert Lernplan</div>
+    <div style="font-size:13px;color:var(--txt);line-height:1.8">
+      <p style="margin-bottom:12px"><b>1. Fächer & Themen anlegen</b><br><span style="color:var(--txt2)">Fach mit Prüfungsdatum, dann Themen mit Wichtigkeit und Schwierigkeit — über 🗂️ "Verwalten" jederzeit erweiterbar.</span></p>
+      <p style="margin-bottom:12px"><b>2. Prioritätsliste</b><br><span style="color:var(--txt2)">Berechnet automatisch, was gerade am dringendsten dran ist — aus Prüfungsdatum, Fortschritt, Wichtigkeit, Schwierigkeit und Motivation.</span></p>
+      <p style="margin-bottom:12px"><b>3. Fortschritt & Wiederholung</b><br><span style="color:var(--txt2)">Fortschritts-Regler pro Thema; bei Auswendiglern-Fächern erscheinen Themen zusätzlich täglich zum Wiederholen (🔄-Häkchen).</span></p>
+      <p style="margin-bottom:12px"><b>4. 📅 Tagesplan</b><br><span style="color:var(--txt2)">Erstellt dir automatisch einen Zeitplan für heute inkl. Pausen, basierend auf deinen Prioritäten.</span></p>
+      <p style="margin-bottom:12px"><b>5. ⚙ Motivation</b><br><span style="color:var(--txt2)">Pro Fach einstellbar, beeinflusst den Prioritäts-Score — dort auch Cloud-Sync und Export/Import für mehrere Geräte.</span></p>
+      <p style="margin-bottom:4px"><b>6. 📊 Statistik</b><br><span style="color:var(--txt2)">Zeigt deinen Fortschritt pro Fach und Thema im Überblick.</span></p>
+    </div>
+    <button class="mg-finish-btn" style="margin-top:16px" onclick="closeHelp()">Los geht's</button>
+  </div>
+</div>
+
 <script>
 // ── Data ─────────────────────────────────────────────────────────────────────
+// Fächer & Themen sind Nutzerdaten (localStorage) — jede Person legt ihre eigenen an.
+// SUBJECTS:  [{id, name, short, color, bg, tx, examDate, openBook}]
+// TOPICS:    [{id, subj (=SUBJECTS[].id), name, grp, w (Wichtigkeit 1-5), d (Schwierigkeit 1-5), hint}]
+// CARDSETS:  [{id, subj, newPerDay, allocations:[{topic (=TOPICS[].id), total}]}]
+//            Konfiguration für extern geführte Karteikarten (Anki, Noji, Papier, ...):
+//            wie viele Karten pro Thema existieren. Rein manuell gepflegt, siehe
+//            logCardSession()/cardMasteryPct() im Score-Abschnitt — es gibt keine
+//            echte Anbindung an die Karteikarten-Apps selbst.
 
-const SUBJECTS = [
+// Farbpalette für neu angelegte Fächer: wird der Reihe nach durchgereicht
+// (siehe mgSaveSubject), damit jedes Fach automatisch eine eigene, zum Rest der
+// App passende Akzentfarbe bekommt, ohne dass die Person selbst eine wählen muss.
+const PALETTE = [
+  {color:'#D85A30',bg:'#FAECE7',tx:'#4A1B0C'},
+  {color:'#EF9F27',bg:'#FAEEDA',tx:'#412402'},
+  {color:'#7F77DD',bg:'#EEEDFE',tx:'#26215C'},
+  {color:'#1D9E75',bg:'#E1F5EE',tx:'#04342C'},
+  {color:'#185FA5',bg:'#E6F1FB',tx:'#042C53'},
+  {color:'#BA7517',bg:'#FFF3DC',tx:'#412402'},
+  {color:'#C2185B',bg:'#FCE4EC',tx:'#4A0E29'},
+  {color:'#00897B',bg:'#E0F2F1',tx:'#00332C'},
+  {color:'#5E35B1',bg:'#EDE7F6',tx:'#2A1359'},
+  {color:'#6D4C41',bg:'#EFEBE9',tx:'#2E1E1A'},
+];
+
+// SUBJECTS/TOPICS sind die "Quelldaten"; S_MAP/T_MAP sind dieselben Objekte nur
+// nach id indiziert (für schnellen Zugriff wie S_MAP[subjId] statt eines .find()).
+// rebuildMaps() muss nach jeder Änderung an SUBJECTS/TOPICS erneut aufgerufen
+// werden — das übernehmen saveSubjects()/saveTopics() weiter unten automatisch.
+// SEED_SUBJECTS/SEED_TOPICS: die feste Fächer-/Themenliste aus der alten Version
+// dieser App (vor der Umstellung auf die editierbare "Verwalten"-Oberfläche), hier
+// unverändert mit denselben IDs übernommen. Wird nur beim allerersten Laden dieser
+// neuen Version verwendet (siehe Migrations-Block direkt darunter) — danach kommen
+// SUBJECTS/TOPICS ganz normal aus localStorage und sind über "Verwalten" editierbar.
+const SEED_SUBJECTS = [
   {id:'bc', name:'Biochemie',          short:'BC',  color:'#D85A30',bg:'#FAECE7',tx:'#4A1B0C', examDate:'2026-08-21',openBook:false},
   {id:'oc', name:'Org. Chemie',        short:'OC',  color:'#EF9F27',bg:'#FAEEDA',tx:'#412402', examDate:'2026-08-07',openBook:false},
   {id:'ic', name:'Inorg. Chem. II',    short:'IC',  color:'#7F77DD',bg:'#EEEDFE',tx:'#26215C', examDate:'2026-08-19',openBook:false},
@@ -305,7 +463,7 @@ const SUBJECTS = [
   {id:'pc', name:'PC III: Quantenmech.',short:'PC', color:'#BA7517',bg:'#FFF3DC',tx:'#412402', examDate:'2026-08-10',openBook:true},
 ];
 
-const TOPICS = [
+const SEED_TOPICS = [
   // BC — d: Schwierigkeit 1-5
   {id:'bc_0', subj:'bc',name:'TCA/Citratzyklus',           w:5,d:3,grp:'Locher'},
   {id:'bc_1', subj:'bc',name:'Glykolyse',                  w:5,d:2,grp:'Locher'},
@@ -391,71 +549,231 @@ const TOPICS = [
   {id:'pc_3',subj:'pc',name:'Hyperfein & Zeeman-Effekt',       w:3,d:3,grp:'PC III'},
 ];
 
-const S_MAP = Object.fromEntries(SUBJECTS.map(s=>[s.id,s]));
-const T_MAP = Object.fromEntries(TOPICS.map(t=>[t.id,t]));
+let SUBJECTS = JSON.parse(localStorage.getItem('lt-subjects')||JSON.stringify(SEED_SUBJECTS));
+let TOPICS   = JSON.parse(localStorage.getItem('lt-topics')||JSON.stringify(SEED_TOPICS));
+let CARDSETS = JSON.parse(localStorage.getItem('lt-cardsets')||'[]');
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// Einmalige Migration von der alten Version dieser App (feste SUBJECTS/TOPICS im
+// Code statt in localStorage, kein "Verwalten"). Läuft nur genau einmal, beim
+// allerersten Laden dieser neuen Version in einem Browser, der die alte Version
+// schon genutzt hat (lt-subjects existiert dort noch nicht). Bestehender Fortschritt/
+// Motivation/Wiederholungsstatus (lt-p/lt-m/lt-r) bleibt erhalten, weil die Themen-
+// IDs identisch zur alten fest verankerten Liste sind — nach dieser Migration
+// verhält sich alles wie gehabt, SUBJECTS/TOPICS kommen aus localStorage und sind
+// über "Verwalten" editierbar.
+if(localStorage.getItem('lt-subjects')===null){
+  localStorage.setItem('lt-subjects', JSON.stringify(SEED_SUBJECTS));
+  localStorage.setItem('lt-topics', JSON.stringify(SEED_TOPICS));
+  localStorage.setItem('lt-onboarded','1');
+}
 
-let progress   = JSON.parse(localStorage.getItem('lt-p')||'{}');
-let motivation = JSON.parse(localStorage.getItem('lt-m')||'{}');
-let lastReview = JSON.parse(localStorage.getItem('lt-r')||'{}');
-let filter     = 'all';
-let expanded   = new Set();
+let S_MAP = {}, T_MAP = {};
+function rebuildMaps(){
+  S_MAP = Object.fromEntries(SUBJECTS.map(s=>[s.id,s]));
+  T_MAP = Object.fromEntries(TOPICS.map(t=>[t.id,t]));
+}
+rebuildMaps();
 
-function saveP(sync=true){ localStorage.setItem('lt-p',JSON.stringify(progress)); if(sync) debouncedPush(); }
-function saveM(sync=true){ localStorage.setItem('lt-m',JSON.stringify(motivation)); if(sync) debouncedPush(); }
-function saveR(sync=true){ localStorage.setItem('lt-r',JSON.stringify(lastReview)); if(sync) debouncedPush(); }
+// Erzeugt eine neue, garantiert eindeutige ID für ein neu angelegtes Fach/Thema
+// (Zeitstempel + Zufallsanteil, z.B. "s_mr3fr6o8c0g5t" oder "t_mr3fsoimjbq8y").
+function genId(prefix){ return prefix+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 
-function todayStr(){ return new Date().toISOString().split('T')[0] }
+// HTML-Escaping für alles, was von der Person selbst eingegeben wurde (Fach-/
+// Themen-Namen, Termin-Bezeichnungen, ...). Notwendig, weil diese Strings direkt
+// per innerHTML in die Seite eingesetzt werden — ohne esc() wäre z.B. ein Fach
+// mit Namen "<img onerror=...>" eine XSS-Lücke. Immer verwenden, wenn Nutzertext
+// in ein Template eingesetzt wird; feste, selbst geschriebene Texte brauchen es nicht.
 function esc(str){
   return String(str??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+// ── State ─────────────────────────────────────────────────────────────────────
+// Der eigentliche Lernfortschritt, getrennt von den "Stammdaten" (Fächer/Themen)
+// oben, damit z.B. ein Import/Export oder Reset der Themenliste den Fortschritt
+// nicht zwangsläufig mitreißt.
+//   progress[topicId]   = {pct: 0-100, hrs: investierte Stunden (Freitext-Zahl)}
+//   motivation[subjId]  = 1-10, siehe Motivation-Modal, beeinflusst calcScore()
+//   lastReview[topicId] = Datum (YYYY-MM-DD) der letzten Wiederholung, oder fehlt
+//                         ganz, wenn das Thema noch nie wiederholt wurde
+//   halfLife[topicId]   = Halbwertszeit in Tagen (Zeit bis die Erinnerung auf 50%
+//                         fällt) nach dem DHP-HLR-Gedächtnismodell (Ye/Su/Cao 2022,
+//                         Su/Ye/Nie/Cao/Chen 2023) — siehe retention()/markReview()
+//                         im Score-Abschnitt. Fehlt ganz, solange noch nie wiederholt.
+//   cardProgress[topicId] = {introduced, emaKnown, lastLogDate} — laufender Stand der
+//                         externen Karteikarten-Praxis (siehe CARDSETS oben), fortge-
+//                         schrieben von logCardSession(). introduced = kumulierte Zahl
+//                         mind. einmal gesehener Karten (gedeckelt bei allocations-Summe),
+//                         emaKnown = exponentiell geglätteter Anteil "gewusst" (0-1).
+
+let progress     = JSON.parse(localStorage.getItem('lt-p')||'{}');
+let motivation   = JSON.parse(localStorage.getItem('lt-m')||'{}');
+let lastReview   = JSON.parse(localStorage.getItem('lt-r')||'{}');
+let halfLife     = JSON.parse(localStorage.getItem('lt-hl')||'{}');
+let cardProgress = JSON.parse(localStorage.getItem('lt-cp')||'{}');
+let filter     = 'all';       // aktueller Fach-Filter in der Prioritätsliste ('all' oder ein subjId)
+let expanded   = new Set();   // Set der topicIds, deren Zeile in der Liste gerade aufgeklappt ist
+
+// save*(): state -> localStorage schreiben, danach (falls sync=true, der Default)
+// einen Cloud-Sync-Push anstoßen (debouncedPush(), siehe Abschnitt "Cloud-Sync").
+// sync=false wird genutzt, wenn mehrere save*-Aufrufe direkt hintereinander
+// passieren und nur der letzte tatsächlich synchen soll (z.B. beim Löschen eines
+// Fachs, das mehrere Datentöpfe gleichzeitig betrifft).
+function saveP(sync=true){ localStorage.setItem('lt-p',JSON.stringify(progress)); if(sync) debouncedPush(); }
+function saveM(sync=true){ localStorage.setItem('lt-m',JSON.stringify(motivation)); if(sync) debouncedPush(); }
+function saveR(sync=true){ localStorage.setItem('lt-r',JSON.stringify(lastReview)); if(sync) debouncedPush(); }
+function saveHL(sync=true){ localStorage.setItem('lt-hl',JSON.stringify(halfLife)); if(sync) debouncedPush(); }
+function saveCP(sync=true){ localStorage.setItem('lt-cp',JSON.stringify(cardProgress)); if(sync) debouncedPush(); }
+function saveSubjects(sync=true){ localStorage.setItem('lt-subjects',JSON.stringify(SUBJECTS)); rebuildMaps(); if(sync) debouncedPush(); }
+function saveTopics(sync=true){ localStorage.setItem('lt-topics',JSON.stringify(TOPICS)); rebuildMaps(); if(sync) debouncedPush(); }
+function saveCardsets(sync=true){ localStorage.setItem('lt-cardsets',JSON.stringify(CARDSETS)); if(sync) debouncedPush(); }
+
+// Räumt verwaiste Fortschritts-/Wiederholungsdaten auf, wenn ein Thema bzw. ein
+// ganzes Fach gelöscht wird (aufgerufen aus mgDeleteTopic/mgDeleteSubject).
+function purgeTopicData(id){
+  delete progress[id]; delete lastReview[id]; delete halfLife[id]; delete cardProgress[id];
+  CARDSETS.forEach(cs=>{ cs.allocations=cs.allocations.filter(a=>a.topic!==id); });
+  saveP(false); saveR(false); saveHL(false); saveCP(false); saveCardsets();
+}
+function purgeSubjectData(sid){
+  TOPICS.filter(t=>t.subj===sid).forEach(t=>{ delete progress[t.id]; delete lastReview[t.id]; delete halfLife[t.id]; delete cardProgress[t.id]; });
+  delete motivation[sid];
+  CARDSETS = CARDSETS.filter(cs=>cs.subj!==sid);
+  saveP(false); saveR(false); saveHL(false); saveCP(false); saveM(false); saveCardsets();
+}
+
+function todayStr(){ return new Date().toISOString().split('T')[0] }
 function getPct(id){ return (progress[id]||{}).pct||0 }
 function getHrs(id){ return (progress[id]||{}).hrs||'' }
 function getMotiv(sid){ return motivation[sid]||5 }
+// Summe der einem Thema über alle Karteikarten-Sets zugeordneten Karten (siehe CARDSETS).
+// 0, solange kein Set mit diesem Thema verknüpft wurde.
+function getCardTotal(topicId){
+  return CARDSETS.reduce((sum,cs)=>sum+cs.allocations.filter(a=>a.topic===topicId).reduce((s,a)=>s+a.total,0),0);
+}
+function getCardProgress(topicId){ return cardProgress[topicId]||{introduced:0,emaKnown:0,lastLogDate:null}; }
+// "Review-Thema" = ein Auswendiglern-Thema (Fach nicht Open-Book), das schon
+// mindestens 60% gelernt ist und deshalb ab jetzt regelmäßig wiederholt statt neu
+// gelernt werden sollte (siehe calcScore()/renderDayCard() weiter unten).
 function isReviewTopic(t){ return !S_MAP[t.subj].openBook && getPct(t.id)>=60 }
 function reviewedToday(id){ return lastReview[id]===todayStr() }
 
+// Werden von den Slidern/Eingabefeldern in der aufgeklappten Themenzeile aufgerufen.
 function setPct(id,v){if(!progress[id])progress[id]={pct:0,hrs:''};progress[id].pct=v;saveP()}
 function setHrs(id,v){if(!progress[id])progress[id]={pct:0,hrs:''};progress[id].hrs=v;saveP()}
 
 // ── Score ─────────────────────────────────────────────────────────────────────
+// Das Herzstück der App: calcScore(thema) liefert eine einzelne Zahl, nach der
+// überall sortiert wird (Prioritätsliste, Tagesplan, "Heute wiederholen"-Karte).
+// Höher = dringender. Der Score ist eine Multiplikation mehrerer 0..1-Faktoren
+// (Dringlichkeit, Lücke zum Ziel, Machbarkeit, Motivation, Schwierigkeit) — sinkt
+// irgendein Faktor auf 0 (z.B. Thema schon 100% fertig), wird der ganze Score 0.
+// Aufgerufen u.a. von renderDayCard(), renderTopicList(), generateSchedule().
 
+// Tage bis zum Prüfungsdatum eines Fachs (nie negativ, auch nach der Prüfung).
 function daysUntil(ds){
   return Math.max(0,(new Date(ds+'T12:00:00')-new Date())/86400000);
 }
 
+// Tage seit der letzten Wiederholung eines Themas, oder null falls noch nie wiederholt.
 function daysSinceReview(id){
   const lr = lastReview[id];
   if(!lr) return null;
   return Math.max(0,(new Date(todayStr()+'T12:00:00')-new Date(lr+'T12:00:00'))/86400000);
 }
 
-// Ebbinghaus-Vergessenskurve: retention sinkt exponentiell seit der letzten Wiederholung.
-// "Stability" (wie lange die Erinnerung hält) wächst mit dem Lernfortschritt und schrumpft
-// mit der Schwierigkeit — je schwerer ein Thema, desto schneller verblasst es wieder.
+// Unsere Schwierigkeit ist 1-5 (siehe Verwalten-Formular), das DHP-HLR-Modell
+// (siehe halfLife oben) wurde auf einer 1-10-Skala gefittet — lineare Umrechnung.
+function d10(d){ return 1+((d||3)-1)*2.25; }
+
+// Start-Halbwertszeit für ein frisch gelerntes Thema, bevor überhaupt eine
+// Wiederholung stattgefunden hat (DHP-HLR, Gleichung h1 = -1/log2(0.925-0.05·d)).
+function initialHalfLife(d){
+  return Math.max(0.5, -1/Math.log2(0.925-0.05*d10(d)));
+}
+
+// Geschätzter Fortschritt allein aus externer Karteikarten-Praxis (Anki/Noji/Papier,
+// manuell über logCardSession() eingetragen): wie viel Anteil des Kartensatzes wurde
+// überhaupt schon gesehen (introduced/Gesamtkarten), gewichtet mit der zuletzt
+// beobachteten Erfolgsquote (emaKnown). Gedeckelt bei 80% — reines Auswendiglernen
+// von Karteikarten ersetzt nie "verstanden + kann es anwenden", das bildet weiterhin
+// nur der manuelle Fortschritts-Regler ab.
+function cardMasteryPct(topicId){
+  const total=getCardTotal(topicId);
+  if(total<=0) return 0;
+  const cp=getCardProgress(topicId);
+  return (cp.introduced/total)*cp.emaKnown*80;
+}
+
+// Der Karteikarten-Fortschritt soll den manuellen Regler nur ergänzen/präzisieren,
+// nicht ersetzen: gespeichert (Regler, Statistik) bleibt weiterhin rawPct. Für die
+// interne Score-Berechnung (calcScore()/retention()) wird stattdessen dieser
+// geschätzte Wert verwendet, der mit Gewicht 0.4 in Richtung der Karten-Evidenz
+// gezogen wird — in beide Richtungen, je nachdem ob die Karten mehr oder weniger
+// zeigen als der Regler angibt.
+function assessedPct(t, rawPct){
+  const total=getCardTotal(t.id);
+  if(total<=0) return rawPct;
+  return rawPct+0.4*(cardMasteryPct(t.id)-rawPct);
+}
+
+// Ebbinghaus-Vergessenskurve: retention sinkt seit der letzten Wiederholung nach
+// p = 2^(-Δt/h) (DHP-HLR, Ye/Su/Cao 2022 / Su/Ye/Nie/Cao/Chen 2023). h ("Halbwertszeit",
+// Tage bis die Erinnerung auf 50% fällt) ist ein persistenter Zustand pro Thema
+// (halfLife[id]), der sich mit jeder tatsächlichen Wiederholung fortschreibt (siehe
+// updateHalfLife()) — nicht mehr, wie zuvor, bei jedem Aufruf frisch aus dem Fortschritt
+// geschätzt. Vor der ersten Wiederholung wird die literaturbasierte Startschätzung
+// initialHalfLife() verwendet, ohne sie zu persistieren (das übernimmt updateHalfLife()).
 function retention(t){
-  const pct = getPct(t.id);
+  const pct = assessedPct(t, getPct(t.id));
   if(pct<=0) return 1;
   const daysSince = daysSinceReview(t.id);
   const ds = daysSince===null ? 999 : daysSince;
-  const difficultyFactor = 1.5-(t.d||3)*0.15;
-  const stability = Math.max(1,(pct/100)*14*difficultyFactor);
-  return Math.exp(-ds/stability);
+  const h = halfLife[t.id]!==undefined ? halfLife[t.id] : initialHalfLife(t.d);
+  return Math.pow(2,-ds/h);
+}
+
+// Verfügbare Lernzeit pro Tag (grobe Schätzung): Tagesfenster minus die beiden fest
+// eingeplanten Mahlzeiten (siehe generateSchedule()). Referenzwert für subjectPressure().
+function getAvailableMinutesPerDay(){
+  const p=getDayPrefs();
+  return Math.max(60,(p.end-p.start)-90);
+}
+
+// Pensum-Druck eines Fachs nach dem Least-Laxity-Prinzip aus dem Echtzeit-Scheduling
+// (Liu & Layland, 1973: ein Terminplan ist nur schaffbar, wenn Σ(benötigte Zeit/verfügbare
+// Zeit) über alle Aufgaben ≤ 1 bleibt). Übertragen auf ein Fach: benötigte Restlernzeit
+// (nur noch offene, nicht im Review-Stadium befindliche Themen) geteilt durch Tage bis
+// zur Prüfung, ins Verhältnis zur täglich verfügbaren Lernzeit gesetzt. >1 heißt: selbst
+// bei täglichem Volleinsatz reicht die Zeit nicht mehr — unabhängig davon, ob die Prüfung
+// laut daysUntil() allein noch "entspannt" weit weg wirkt (siehe dayUrgency in calcScore()).
+function subjectPressure(subjId){
+  const topics=TOPICS.filter(t=>t.subj===subjId && !isReviewTopic(t) && getPct(t.id)<100);
+  const remainingMin=topics.reduce((sum,t)=>sum+estimateDur(t),0);
+  const days=Math.max(1,daysUntil(S_MAP[subjId].examDate));
+  return (remainingMin/days)/getAvailableMinutesPerDay();
 }
 
 function calcScore(t, pctOverride){
   const s = S_MAP[t.subj];
   const days  = daysUntil(s.examDate);
-  const pct   = pctOverride!==undefined ? pctOverride : getPct(t.id);
+  const rawPct = pctOverride!==undefined ? pctOverride : getPct(t.id);
+  const pct   = assessedPct(t, rawPct);
   const motiv = getMotiv(t.subj);
   const d     = t.d||3;
-  const urgency     = Math.max(0,Math.min(1,1-days/75));
+  const dayUrgency  = Math.max(0,Math.min(1,1-days/75));
+  const pressure    = Math.min(1,subjectPressure(t.subj));
+  const urgency     = Math.max(dayUrgency,pressure);
   const gap         = Math.max(0,1-pct/100);
   const machbarkeit = pct<80 ? 1.0 : 1.0-((pct-80)/20)*0.85;
   const motivFactor = 0.5+(motiv-1)/9*0.5;
-  // Schwierigere Themen früh angehen statt aufschieben: moderater Prioritäts-Bonus.
-  const diffBoost   = 0.7+d*0.12;
+  // Schwierigkeit lohnt sich nur, wenn auch die Wichtigkeit hoch ist (Cost-Benefit-Prinzip
+  // aus der "Expected Value of Control"-Theorie, Shenhav et al. 2013): schwer+unwichtig
+  // bleibt neutral (verschenkte Zeit), leicht+wichtig bekommt schon einen "Quick Win"-Bonus,
+  // schwer UND wichtig am meisten — per Sättigungsterm auf einen Höchstwert gedeckelt statt
+  // unbegrenzt zu wachsen.
+  const wBoost      = Math.pow(Math.max(0,t.w-3),2);
+  const dAmplifier  = 1+3.5*Math.max(0,d-3);
+  const diffBoost   = 1+0.30*(1-Math.exp(-0.1733*wBoost*dAmplifier));
   const learnScore  = t.w*urgency*gap*machbarkeit*motivFactor*diffBoost;
   // Review-Priorität steigt kontinuierlich mit dem Vergessen (1-retention),
   // statt nur binär "heute schon wiederholt oder nicht".
@@ -465,6 +783,7 @@ function calcScore(t, pctOverride){
   return learnScore+reviewScore;
 }
 
+// Score -> Ampelfarbe für Zahlen/Balken in der ganzen App (rot=dringend ... grau=erledigt/unwichtig).
 function scoreCol(score){
   if(score>2.0) return '#ff3b30';
   if(score>1.0) return '#ff9500';
@@ -472,6 +791,7 @@ function scoreCol(score){
   return '#aeaeb2';
 }
 
+// Färbt einen <input type=range> links vom Regler-Knopf ein (visueller Fortschrittsbalken).
 function fillRange(el,col){
   const v=parseFloat(el.value),mn=parseFloat(el.min||0),mx=parseFloat(el.max||100);
   const p=(v-mn)/(mx-mn)*100;
@@ -479,12 +799,20 @@ function fillRange(el,col){
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
+// Jede render*()-Funktion hier ist "dumm" im guten Sinne: sie liest den aktuellen
+// State/SUBJECTS/TOPICS, baut daraus einen HTML-String und setzt ihn per
+// .innerHTML in ein festes Ziel-Element (id aus dem <body> weiter oben). Es gibt
+// keinen Diff/Virtual DOM — bei jedem Aufruf wird der betroffene Teil komplett
+// neu gezeichnet. Aufgerufen werden diese Funktionen aus den Action-Handlern
+// weiter unten sowie aus refreshAll()/init().
 
 function renderHeader(){
   document.getElementById('hdr-date').textContent=
     new Date().toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 }
 
+// Die horizontal scrollbare Fach-Leiste ganz oben ("Tage bis Prüfung" pro Fach),
+// nach Prüfungsdatum sortiert. Fächer mit ≤14 Tagen werden farblich hervorgehoben.
 function renderExamBar(){
   const sorted=[...SUBJECTS].sort((a,b)=>new Date(a.examDate)-new Date(b.examDate));
   document.getElementById('exam-bar').innerHTML=sorted.map(s=>{
@@ -492,12 +820,17 @@ function renderExamBar(){
     const urgent=d<=14;
     return`<div class="exam-chip" style="background:${urgent?s.bg:'var(--bg2)'};color:${urgent?s.tx:'var(--txt2)'}">
       <span class="exam-days" style="color:${urgent?s.color:'var(--txt)'}">${d}</span>
-      <span>${s.short}</span>
+      <span>${esc(s.short)}</span>
       ${s.openBook?'<span style="font-size:8px;opacity:.6">📖</span>':''}
     </div>`;
   }).join('');
 }
 
+// Die dunkle Karte oben in der Übersicht mit zwei Teilen:
+// "Heute wiederholen" (Klick-Häkchen für alle aktuellen Review-Themen, siehe
+// isReviewTopic()) und "Neu lernen" (Top-3 der Prioritätsliste, die noch nicht
+// im Review-Stadium sind). Reine Anzeige — die Logik dahinter steckt in
+// isReviewTopic()/calcScore(); Klicks landen bei markReview().
 function renderDayCard(){
   const today = todayStr();
   // Review-Themen: !openBook, pct >= 60
@@ -522,13 +855,18 @@ function renderDayCard(){
       : reviewItems.map(t=>{
           const s=S_MAP[t.subj];
           const done=reviewedToday(t.id);
-          return`<button class="rev-chip${done?' done':''}"
+          const chip=`<button class="rev-chip${done?' done':''}"
             style="border-color:${s.color};color:${done?'rgba(255,255,255,.4)':'#fff'}"
-            onclick="markReview('${t.id}')">
+            onclick="markReview('${t.id}',true)">
             <span class="rev-chip-check">${done?'✓':'○'}</span>
-            <span style="background:${s.bg};color:${s.tx};padding:1px 5px;border-radius:3px;font-size:9px">${s.short}</span>
-            <span>${t.name}</span>
+            <span style="background:${s.bg};color:${s.tx};padding:1px 5px;border-radius:3px;font-size:9px">${esc(s.short)}</span>
+            <span>${esc(t.name)}</span>
           </button>`;
+          // Nur solange noch nicht erledigt: kleiner Vergessen-Button daneben, damit ein
+          // "vergessen" auch tatsächlich erfassbar ist (fließt in markReview() als
+          // success=false in die Halbwertszeit-Berechnung ein, statt nur "nicht angetippt").
+          const forgetBtn=done?'':`<button class="rev-chip" style="border-color:${s.color};color:#fff;padding:5px 8px" title="Vergessen" onclick="markReview('${t.id}',false)">✗</button>`;
+          return chip+forgetBtn;
         }).join('');
 
   const learnHtml = learnItems.length===0
@@ -539,8 +877,8 @@ function renderDayCard(){
         return`<div class="learn-item">
           <div class="learn-rank">#${i+1}</div>
           <div class="learn-body">
-            <div class="learn-name">${t.name}</div>
-            <div class="learn-meta">${s.short} · ${t.grp} · ${Math.ceil(daysUntil(s.examDate))}d</div>
+            <div class="learn-name">${esc(t.name)}</div>
+            <div class="learn-meta">${esc(s.short)} · ${esc(t.grp)} · ${Math.ceil(daysUntil(s.examDate))}d</div>
           </div>
           <div class="learn-score" style="color:${col}">${t.score.toFixed(1)}</div>
         </div>`;
@@ -555,6 +893,7 @@ function renderDayCard(){
   </div>`;
 }
 
+// Die "Alle / Fach1 / Fach2 / ..."-Filterchips über der Prioritätsliste.
 function renderFilterBar(){
   const chips=[{id:'all',label:'Alle'},...SUBJECTS];
   document.getElementById('filter-bar').innerHTML=chips.map(f=>{
@@ -562,11 +901,15 @@ function renderFilterBar(){
     const col=f.id==='all'?'var(--txt)':S_MAP[f.id].color;
     return`<button class="fchip" onclick="setFilter('${f.id}')"
       style="${active?`background:${col};color:#fff;border-color:${col}`:''}">
-      ${f.id==='all'?f.label:f.short}
+      ${f.id==='all'?f.label:esc(f.short)}
     </button>`;
   }).join('');
 }
 
+// Die eigentliche Prioritätsliste: alle (ggf. gefilterten) Themen nach Score
+// sortiert, jede Zeile antippbar (toggleExpand) für Fortschritts-Regler,
+// Stunden-Eingabe und Review-Häkchen. maxScore dient nur der Balkenbreite der
+// kleinen "Dringlichkeits-Leiste" (.t-bar) unter jeder Zeile.
 function renderTopicList(){
   const list=(filter==='all'?TOPICS:TOPICS.filter(t=>t.subj===filter))
     .map(t=>({...t,score:calcScore(t)}))
@@ -587,16 +930,17 @@ function renderTopicList(){
     const dDots=Array.from({length:5},(_,di)=>
       `<div class="w-dot" style="background:${di<(t.d||3)?'#ff9500':'var(--bg3)'}"></div>`).join('');
     const sliderBg=`linear-gradient(to right,${col} ${pct}%,var(--bg3) ${pct}%)`;
+    const cardTotal=getCardTotal(t.id);
 
     return`<div class="t-row" id="tr-${t.id}" onclick="toggleExpand('${t.id}')">
       <div class="t-row-main">
         <span class="t-rank">${i+1}</span>
-        <span class="t-badge" style="background:${s.bg};color:${s.tx}">${s.short}</span>
-        <span class="t-name">${t.name}</span>
+        <span class="t-badge" style="background:${s.bg};color:${s.tx}">${esc(s.short)}</span>
+        <span class="t-name">${esc(t.name)}</span>
         <div class="t-right">
           ${isRev?`<button class="chk-btn${done?' done':''}"
             style="border-color:${done?'#34c759':s.color};color:${done?'#fff':s.color}"
-            onclick="event.stopPropagation();markReview('${t.id}')">${done?'✓':'○'}</button>`:''}
+            onclick="event.stopPropagation();markReview('${t.id}',true)">${done?'✓':'○'}</button>`:''}
           <span class="t-pct" style="color:${col}">${pct}%</span>
           <span class="t-score" style="color:${col}">${t.score.toFixed(1)}</span>
         </div>
@@ -604,13 +948,13 @@ function renderTopicList(){
       <div class="t-bar-wrap"><div class="t-bar" style="width:${Math.round(t.score/maxScore*100)}%;background:${col}"></div></div>
       ${isExp?`<div class="t-expand" onclick="event.stopPropagation()">
         <div class="t-expand-meta">
-          <span class="meta-tag" style="background:${s.bg};color:${s.tx}">${t.grp}</span>
+          <span class="meta-tag" style="background:${s.bg};color:${s.tx}">${esc(t.grp)}</span>
           ${s.openBook?'<span class="meta-tag ob-tag">📖 Open Book</span>':''}
           ${isRev?'<span class="meta-tag rev-tag">🔄 Review</span>':''}
           <div class="w-dots" title="Wichtigkeit">${wDots}</div>
           <div class="w-dots" title="Schwierigkeit">${dDots}</div>
         </div>
-        ${t.hint?`<div style="font-size:10px;color:var(--txt3);font-style:italic;margin-bottom:6px;line-height:1.4">${t.hint}</div>`:''}
+        ${t.hint?`<div style="font-size:10px;color:var(--txt3);font-style:italic;margin-bottom:6px;line-height:1.4">${esc(t.hint)}</div>`:''}
 
         <div class="t-ctrl-row">
           <div class="ctrl">
@@ -630,12 +974,37 @@ function renderTopicList(){
               onchange="saveHrs('${t.id}',this.value)">
           </div>
         </div>
-        ${isRev?`<div class="review-hint">Tägliche Wiederholung empfohlen (BC/OC/IC ohne Hilfsmittel)</div>`:''}
+        ${isRev?`<div class="review-hint">Tägliche Wiederholung empfohlen (BC/OC/IC ohne Hilfsmittel)</div>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          ${done
+            ?`<button style="flex:1;padding:7px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:var(--bg3);color:var(--txt)" onclick="event.stopPropagation();markReview('${t.id}',true)">↩ Rückgängig</button>`
+            :`<button style="flex:1;padding:7px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:#34c759;color:#fff" onclick="event.stopPropagation();markReview('${t.id}',true)">✓ Gewusst</button>
+              <button style="flex:1;padding:7px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:#ff3b30;color:#fff" onclick="event.stopPropagation();markReview('${t.id}',false)">✗ Vergessen</button>`
+          }
+        </div>`:''}
+        ${cardTotal>0?`<div style="margin-top:10px;padding-top:10px;border-top:.5px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span class="ctrl-lbl">🗂️ Karteikarten (${getCardProgress(t.id).introduced}/${cardTotal})</span>
+            <span style="font-size:11px;font-weight:700;color:var(--txt2)">≈${Math.round(cardMasteryPct(t.id))}% (ergänzend)</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="number" min="0" max="${cardTotal}" id="cs-done-${t.id}" placeholder="Heute gemacht"
+              style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px"
+              onclick="event.stopPropagation()">
+            <input type="number" min="0" id="cs-known-${t.id}" placeholder="Gewusst"
+              style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px"
+              onclick="event.stopPropagation()">
+            <button style="padding:6px 10px;border-radius:7px;border:none;background:#007aff;color:#fff;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0"
+              onclick="event.stopPropagation();submitCardSession('${t.id}')">Eintragen</button>
+          </div>
+        </div>`:''}
       </div>`:''}
     </div>`;
   }).join('');
 }
 
+// Inhalt des ⚙-Motivation-Modals: pro Fach ein Regler 1-10, der in calcScore()
+// als motivFactor einfließt (niedrige Motivation dämpft die Priorität etwas).
 function renderMotivModal(){
   document.getElementById('motiv-content').innerHTML=SUBJECTS.map(s=>{
     const m=getMotiv(s.id);
@@ -645,7 +1014,7 @@ function renderMotivModal(){
     return`<div class="motiv-row">
       <div class="motiv-top">
         <div>
-          <div class="motiv-name">${s.name}</div>
+          <div class="motiv-name">${esc(s.name)}</div>
           <div class="motiv-info">${date} · ${d} Tage${s.openBook?' · 📖 Open Book':''}</div>
         </div>
         <div class="motiv-val" style="color:${s.color}" id="mv-${s.id}">${m}</div>
@@ -662,6 +1031,10 @@ function renderMotivModal(){
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
+// Handler, die aus onclick/oninput/onchange-Attributen im HTML aufgerufen werden.
+// Muster "live*" vs. "save*": live* aktualisiert nur die Anzeige (Farbe, Prozent-
+// Text) während man den Regler zieht, ohne zu speichern; save* speichert erst
+// beim Loslassen (onchange) und rendert danach die betroffenen Listen neu.
 
 function setFilter(id){ filter=id; renderFilterBar(); renderTopicList(); }
 
@@ -670,15 +1043,83 @@ function toggleExpand(id){
   renderTopicList();
 }
 
-function markReview(id){
+// Schreibt die Halbwertszeit eines Themas nach den DHP-HLR-Formeln fort (Ye/Su/Cao
+// 2022, Su/Ye/Nie/Cao/Chen 2023) — gemeinsam genutzt von markReview() (p aus unserem
+// eigenen retention()-Modell geschätzt) und logCardSession() (p aus einer tatsächlich
+// beobachteten Karteikarten-Erfolgsquote, siehe dort — die bessere Grundlage, wo verfügbar).
+function updateHalfLife(id, t, p, success){
+  const h=halfLife[id]!==undefined ? halfLife[id] : initialHalfLife(t.d);
+  const forgetGap=Math.max(0.01,1-p); // Clamp verhindert Explosion bei (1-p)^-0.017 nahe p=1
+  const d=d10(t.d);
+  halfLife[id] = success
+    ? h*(Math.exp(3.25)*Math.pow(d,-0.386)*Math.pow(h,-0.147)*Math.pow(forgetGap,0.821)+1)
+    : Math.max(0.5, Math.exp(1.003)*Math.pow(d,-0.152)*Math.pow(h,0.264)*Math.pow(forgetGap,-0.017));
+  saveHL(false);
+}
+
+// Häkchen in "Heute wiederholen" bzw. das 🔄-Icon in der Themenliste: markiert ein
+// Thema als heute wiederholt — mit Erfolg (success=true, Standard-Klick) oder als
+// "vergessen" (success=false, über die Gewusst/Vergessen-Buttons in der aufgeklappten
+// Zeile, siehe renderTopicList()). Erneutes Antippen einer schon erledigten Wiederholung
+// macht nur die Erledigt-Markierung rückgängig; die Halbwertszeit-Anpassung bleibt
+// bestehen — ein Wiederholungs-Ergebnis im Nachhinein aus dem Gedächtnismodell zu
+// "entfernen" sieht das DHP-HLR-Modell nicht vor.
+function markReview(id, success=true){
   const td=todayStr();
-  lastReview[id]=reviewedToday(id)?null:td; // toggle
-  if(!lastReview[id]) delete lastReview[id];
+  if(reviewedToday(id)){
+    delete lastReview[id];
+    saveR();
+    renderDayCard();
+    renderTopicList();
+    return;
+  }
+  const t=T_MAP[id];
+  const p=retention(t); // Erinnerungswahrscheinlichkeit im Moment dieser Wiederholung
+  updateHalfLife(id, t, p, success);
+  lastReview[id]=td;
   saveR();
   renderDayCard();
   renderTopicList();
 }
 
+// Trägt eine Karteikarten-Sitzung für heute ein (done Karten gemacht, davon known
+// gewusst — z.B. aus Anki/Noji/Papier). Schreibt cardProgress[id] fort (introduced
+// kumulativ gedeckelt bei getCardTotal(), emaKnown exponentiell geglättet mit α=0.3,
+// d.h. neuere Tage zählen mehr, ohne ältere Historie komplett zu verwerfen) und nutzt
+// die tatsächlich beobachtete Erfolgsquote als p in updateHalfLife() — eine bessere
+// Grundlage als die modellierte Schätzung aus retention(), da wirklich gemessen statt
+// geschätzt. Schwelle 70% statt der sonst üblichen 90%-Zielretention, weil das hier
+// eine grobe Tageszusammenfassung über viele Karten ist, kein Einzelkarten-Urteil.
+function logCardSession(id, done, known){
+  const total=getCardTotal(id);
+  if(total<=0||done<=0) return;
+  const t=T_MAP[id];
+  const knownPct=Math.max(0,Math.min(1,known/done));
+  const cp=getCardProgress(id);
+  const ALPHA=0.3;
+  cardProgress[id]={
+    introduced: Math.min(total, cp.introduced+done),
+    emaKnown: cp.lastLogDate ? ALPHA*knownPct+(1-ALPHA)*cp.emaKnown : knownPct,
+    lastLogDate: todayStr(),
+  };
+  saveCP(false);
+  updateHalfLife(id, t, knownPct, knownPct>=0.7);
+  refreshAll();
+}
+
+// Liest die beiden Eingabefelder im "🗂️ Karteikarten"-Mini-Formular einer aufgeklappten
+// Themenzeile aus und ruft logCardSession() auf.
+function submitCardSession(id){
+  const doneEl=document.getElementById('cs-done-'+id);
+  const knownEl=document.getElementById('cs-known-'+id);
+  const done=parseInt(doneEl.value)||0;
+  const known=parseInt(knownEl.value)||0;
+  if(done<=0){ alert('Bitte eintragen, wie viele Karten heute gemacht wurden.'); return; }
+  if(known>done){ alert('Gewusst kann nicht mehr sein als gemacht.'); return; }
+  logCardSession(id, done, known);
+}
+
+// Während der Fortschritts-Regler gezogen wird (noch nicht gespeichert).
 function livePct(id,el){
   const v=parseInt(el.value);
   const col=scoreCol(calcScore(T_MAP[id],v));
@@ -687,6 +1128,7 @@ function livePct(id,el){
   if(pv) pv.textContent=v+'%';
 }
 
+// Fortschritts-Regler losgelassen: jetzt tatsächlich speichern.
 function savePct(id,val){
   setPct(id,parseInt(val));
   renderDayCard();
@@ -695,6 +1137,7 @@ function savePct(id,val){
 
 function saveHrs(id,val){ setHrs(id,parseFloat(val)||'') }
 
+// Analog zu livePct/savePct, nur für den Motivations-Regler im ⚙-Modal.
 function liveMotiv(sid,el){
   fillRange(el,S_MAP[sid].color);
   const mv=document.getElementById('mv-'+sid);
@@ -707,6 +1150,7 @@ function saveMotiv(sid,val){
   renderTopicList();
 }
 
+// Öffnet das ⚙-Modal (Motivation + Cloud-Sync-Einstellungen + Export/Import).
 function openModal(){
   renderMotivModal();
   const keyEl=document.getElementById('sync-key-input');
@@ -721,11 +1165,19 @@ function closeModal(){ document.getElementById('modal-bg').classList.remove('ope
 function bgClick(e){ if(e.target===document.getElementById('modal-bg')) closeModal(); }
 
 // ── Tagesplan ─────────────────────────────────────────────────────────────────
+// Alles rund um den automatisch erzeugten Tagesplan (📅-Modal): Zeiten werden
+// intern durchgehend als "Minuten seit Mitternacht" gerechnet (z.B. 7:00 = 420),
+// fmtTime() wandelt das für die Anzeige zurück in "HH:MM".
 
 function fmtTime(mins){
   return String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0');
 }
 
+// Schätzt, wie viele Minuten eine Lerneinheit zu einem Thema dauern sollte.
+// Review-Themen bekommen pauschal 30min. Sonst: Basis-Dauer nach Wichtigkeit (w),
+// skaliert mit der noch offenen Lücke (gap: bei 100% Fortschritt nur noch 35% der
+// Basis-Zeit) und der Schwierigkeit (diffMod), Open-Book-Fächer brauchen weniger
+// Auswendig-Zeit (*0.65). Ergebnis wird auf 15-Minuten-Schritte gerundet, min. 30.
 function estimateDur(t){
   const pct=getPct(t.id), gap=Math.max(0,1-pct/100), s=S_MAP[t.subj];
   if(isReviewTopic(t)) return 30;
@@ -737,6 +1189,13 @@ function estimateDur(t){
 }
 
 // ── Tagesplan-Einstellungen & Termine ──────────────────────────────────────────
+// dayPrefs (localStorage 'lt-dayprefs') = persönliche, dauerhaft gespeicherte
+// Tages-Eckwerte: start/end (wann der Plan beginnt/endet) sowie feste lunch/
+// dinner-Zeiten — alle Werte in Minuten seit Mitternacht, siehe fmtTime()/toMin().
+// appointments (localStorage 'lt-appointments') sind dagegen TAGESAKTUELL: pro
+// Datum (todayStr()) eine eigene Liste, die nach ein paar Tagen automatisch
+// aufgeräumt wird (siehe saveTodayAppointments). Wird beim ersten Öffnen des
+// Tagesplan-Modals an einem neuen Tag einmalig kurz nachgefragt (renderApptSection).
 
 function toMin(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
 
@@ -744,6 +1203,7 @@ function getDayPrefs(){
   return JSON.parse(localStorage.getItem('lt-dayprefs')||'{"start":420,"end":1260,"lunch":750,"dinner":1140}');
 }
 function saveDayPrefs(p){ localStorage.setItem('lt-dayprefs', JSON.stringify(p)); }
+// Beginn-Zeit-Eingabe im Tagesplan-Modal: validiert, dass Beginn vor Ende liegt.
 function saveDayStart(hhmm){
   if(!hhmm) return;
   const p=getDayPrefs();
@@ -752,6 +1212,7 @@ function saveDayStart(hhmm){
   p.start=newStart; saveDayPrefs(p);
   renderPlan();
 }
+// Analog zu saveDayStart(), für die Ende-Zeit-Eingabe.
 function saveDayEnd(hhmm){
   if(!hhmm) return;
   const p=getDayPrefs();
@@ -761,10 +1222,16 @@ function saveDayEnd(hhmm){
   renderPlan();
 }
 
+// Liefert die Terminliste für HEUTE, oder null wenn an diesem Tag noch gar nicht
+// gefragt wurde (Unterschied zu einem leeren Array [] = "gefragt, nichts anzugeben").
+// Dieser null-vs-[]-Unterschied steuert, ob renderApptSection() den Hinweistext
+// "Steht heute etwas an?" noch anzeigt oder nicht.
 function getTodayAppointments(){
   const all=JSON.parse(localStorage.getItem('lt-appointments')||'{}');
   return all[todayStr()] ?? null; // null = heute noch nicht gefragt
 }
+// Schreibt die Terminliste für heute zurück und wirft dabei alte Tage raus
+// (nur die letzten 7 Tage werden aufgehoben, mehr braucht niemand).
 function saveTodayAppointments(list){
   const all=JSON.parse(localStorage.getItem('lt-appointments')||'{}');
   all[todayStr()]=list;
@@ -773,6 +1240,7 @@ function saveTodayAppointments(list){
   localStorage.setItem('lt-appointments', JSON.stringify(all));
 }
 
+// Formular-Handler für "+ Termin hinzufügen" im Tagesplan-Modal.
 function addAppointment(){
   const s=document.getElementById('appt-start-input').value;
   const e=document.getElementById('appt-end-input').value;
@@ -792,11 +1260,16 @@ function removeAppointment(i){
   renderApptSection();
   renderPlan();
 }
+// "Nichts heute →"-Link: markiert den Tag als "gefragt" (leeres Array statt
+// null), ohne dass ein Termin eingetragen wurde, damit der Hinweis verschwindet.
 function dismissApptPrompt(){
   if(getTodayAppointments()===null) saveTodayAppointments([]);
   renderApptSection();
 }
 
+// Zeichnet den Termin-Bereich oben im Tagesplan-Modal: bestehende Termine als
+// Chips (mit ✕ zum Entfernen) + das Formular zum Hinzufügen + ggf. den einmaligen
+// Hinweistext, solange für heute noch nichts eingetragen/übersprungen wurde.
 function renderApptSection(){
   const el=document.getElementById('appt-section');
   if(!el) return;
@@ -821,6 +1294,10 @@ function renderApptSection(){
 // Zeitfenster dazwischen füllt eine Round-Robin-Rotation zwischen den Fächern
 // (statt einer reinen Score-Sortierung, die sonst leicht "ein Fach am Stück" ergibt).
 
+// Sortiert Zeitintervalle [{start,end,...}] nach Startzeit und verschmilzt
+// überlappende/direkt aneinandergrenzende zu einem einzigen Intervall. Wird
+// benutzt, um Termine + Mittag-/Abendpause zu einer sauberen, überlappungsfreien
+// Liste "fester Blöcke" zusammenzuführen, bevor die Lernzeit drumherum verplant wird.
 function mergeIntervals(list){
   const sorted=[...list].sort((a,b)=>a.start-b.start);
   const out=[];
@@ -832,6 +1309,18 @@ function mergeIntervals(list){
   return out;
 }
 
+// Baut den Tagesplan als flache Liste von "entries" (in zeitlicher Reihenfolge),
+// die renderPlanGrid() später als Kalenderblöcke zeichnet und planToText() als
+// Text exportiert. Jeder Eintrag hat mindestens {type, time} (Minuten seit
+// Mitternacht); je nach type kommen weitere Felder dazu:
+//   'topic'  {t: Thema-Objekt inkl. .dur}      — eine Lerneinheit
+//   'break'  {emoji, label, dur}               — kurze Pause (alle ~90min Lernzeit)
+//   'appt'   {label, dur}                      — fester Termin oder Mahlzeit
+//   'review' {topics: [...], dur}              — gesammelter Wiederholungs-Block
+//   'end'    {}                                — Markierung "Feierabend"
+// Ablauf: 1) feste Blöcke (Termine+Mahlzeiten) chronologisch durchgehen und die
+// Lücken dazwischen mit fillWindow() auffüllen, 2) danach ggf. noch ein
+// Wiederholungs-Block ans Ende, falls Zeit übrig ist.
 function generateSchedule(){
   const prefs=getDayPrefs();
   const appts=(getTodayAppointments()||[]).map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
@@ -965,6 +1454,9 @@ function renderPlanGrid(entries, prefs){
   </div>`;
 }
 
+// Ruft generateSchedule() auf, merkt sich das Ergebnis in _planEntries (für
+// planToText()/copyPlan()) und zeichnet das Kalenderraster. Wird nach jeder
+// Änderung an Terminen/Start-/Endzeit erneut aufgerufen.
 function renderPlan(){
   const prefs=getDayPrefs();
   const entries=generateSchedule();
@@ -978,6 +1470,8 @@ function renderPlan(){
   document.getElementById('plan-content').innerHTML = renderPlanGrid(entries, prefs);
 }
 
+// Wandelt _planEntries in reinen Text um, für den "Als Text kopieren"-Button
+// (z.B. zum Einfügen in eine Notiz-App oder einen Kalender-Eintrag).
 function planToText(){
   const date=new Date().toLocaleDateString('de-CH',{weekday:'short',day:'numeric',month:'short'});
   const lines=['📅 Tagesplan '+date,''];
@@ -1007,6 +1501,8 @@ function copyPlan(){
   });
 }
 
+// Öffnet das Tagesplan-Modal: Start-/Ende-Eingaben vorbelegen, Termin-Bereich +
+// den Plan selbst neu zeichnen.
 function openPlan(){
   const prefs=getDayPrefs();
   document.getElementById('daystart-input').value = fmtTime(prefs.start);
@@ -1021,8 +1517,9 @@ function planBgClick(e){ if(e.target===document.getElementById('plan-bg')) close
 
 // ── Statistik ─────────────────────────────────────────────────────────────────
 
-let activeTab='overview';
+let activeTab='overview'; // 'overview' oder 'stats' — welcher der zwei Reiter aktiv ist
 
+// Wechselt zwischen "Übersicht" und "📊 Statistik"-Reiter.
 function setTab(tab){
   activeTab=tab;
   document.getElementById('tab-overview').style.display=tab==='overview'?'':'none';
@@ -1032,8 +1529,10 @@ function setTab(tab){
   if(tab==='stats') renderStatsView();
 }
 
+// Ein Fortschrittsbalken pro Thema, gruppiert nach Fach (nach Prüfungsdatum
+// sortiert), mit Durchschnitt und "X von Y Themen ≥80%" je Fach.
 function renderStatsView(){
-  const subjOrder=['bc','oc','ic','ciw','ac','pc'];
+  const subjOrder=[...SUBJECTS].sort((a,b)=>new Date(a.examDate)-new Date(b.examDate)).map(s=>s.id);
   const html=subjOrder.map(sid=>{
     const s=S_MAP[sid];
     const topics=TOPICS.filter(t=>t.subj===sid);
@@ -1047,7 +1546,7 @@ function renderStatsView(){
         `<div class="stats-diff-dot${i<(t.d||3)?' on':''}"></div>`).join('');
       return`<div class="stats-bar-row">
         <div class="stats-bar-lbl">
-          <div class="stats-bar-name">${t.name}</div>
+          <div class="stats-bar-name">${esc(t.name)}</div>
           <div class="stats-diff">${dDots}</div>
         </div>
         <div class="stats-bar-track">
@@ -1059,8 +1558,8 @@ function renderStatsView(){
     }).join('');
     return`<div class="stats-subj">
       <div class="stats-subj-hdr" style="border-color:${s.color}">
-        <span class="stats-subj-name" style="color:${s.color}">${s.name}</span>
-        <span class="stats-subj-badge" style="background:${s.bg};color:${s.tx}">${s.short}</span>
+        <span class="stats-subj-name" style="color:${s.color}">${esc(s.name)}</span>
+        <span class="stats-subj-badge" style="background:${s.bg};color:${s.tx}">${esc(s.short)}</span>
         <span class="stats-subj-avg">${avg}% ø · ${done80}/${topics.length} ≥80% · ${d}d</span>
       </div>
       ${rows}
@@ -1070,12 +1569,22 @@ function renderStatsView(){
 }
 
 // ── Cloud-Sync (Firebase Realtime Database) ───────────────────────────────────
+// Komplett optional: nur aktiv, wenn die Person im ⚙-Modal einen eigenen
+// Firebase-"Schlüssel" (frei wählbarer Name, dient als Pfad in der Datenbank)
+// und eine firebaseConfig hinterlegt hat. Ohne das bleibt die App rein lokal.
+// Prinzip: bei jeder Änderung wird (debounced, also erst nach kurzer Pause im
+// Tippen) der komplette State {p,m,r,s,t} unter lerntracker/<schlüssel> in die
+// Firebase-Datenbank geschrieben. Ein zweites Gerät mit demselben Schlüssel hört
+// per .on('value', ...) auf Änderungen und übernimmt sie, wenn sie neuer sind
+// als der eigene Stand (Vergleich über den Zeitstempel "ts" — simples
+// "neueste Version gewinnt", kein echtes Konflikt-Merging).
 
 let _fbRef=null, _fbPushTimer=null, _fbInited=false;
 
 function getSyncKey(){ return localStorage.getItem('lt-sync-key')||''; }
 function getSyncCfg(){ try{ return JSON.parse(localStorage.getItem('lt-fb')||'null'); }catch{ return null; } }
 
+// Kleiner Statustext im ⚙-Modal ("● Verbunden" / "↑ Sync 14:32" / Fehler in Rot).
 function syncStatus(msg, state){
   const el=document.getElementById('sync-status');
   if(!el) return;
@@ -1083,17 +1592,26 @@ function syncStatus(msg, state){
   el.style.color=state===true?'#34c759':state===false?'#ff3b30':'var(--txt2)';
 }
 
+// Wird von jedem save*() aufgerufen (sofern sync=true); wartet 1.2s Ruhe, bevor
+// tatsächlich hochgeladen wird, damit nicht bei jedem einzelnen Tastendruck/
+// Regler-Pixel ein Netzwerk-Request rausgeht.
 function debouncedPush(){ clearTimeout(_fbPushTimer); _fbPushTimer=setTimeout(fbPush,1200); }
 
+// Schreibt den kompletten aktuellen State in die Firebase-Datenbank (nur falls
+// bereits eine Verbindung besteht, siehe _connectSync()).
 function fbPush(){
   if(!_fbRef) return;
   const ts=Date.now();
   localStorage.setItem('lt-ts',ts);
-  _fbRef.set({p:progress,m:motivation,r:lastReview,ts})
+  _fbRef.set({p:progress,m:motivation,r:lastReview,hl:halfLife,cp:cardProgress,s:SUBJECTS,t:TOPICS,cs:CARDSETS,ts})
     .then(()=>syncStatus('↑ Sync '+new Date().toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'}),true))
     .catch(e=>syncStatus('✗ '+e.code,false));
 }
 
+// Erlaubt, dass man den firebaseConfig-Block direkt so einfügen kann, wie
+// Firebase ihn in seiner Konsole anzeigt (JS-Objekt-Syntax mit unquoted keys,
+// evtl. "const firebaseConfig = ..." davor) — wird hier in valides JSON
+// umgewandelt, statt die Person zu zwingen, es von Hand anzupassen.
 function _parseFbCfg(raw){
   raw=raw.trim()
     .replace(/^(const|var|let)\s+\w+\s*=\s*/,'')
@@ -1103,6 +1621,9 @@ function _parseFbCfg(raw){
   return JSON.parse(raw);
 }
 
+// Baut die Firebase-Referenz auf den persönlichen Pfad auf und hört fortlaufend
+// auf Änderungen. Wird sowohl beim initialen Laden (initSync()) als auch beim
+// erstmaligen Aktivieren (saveSync()) aufgerufen.
 function _connectSync(key){
   try{
     const db=firebase.database();
@@ -1113,7 +1634,7 @@ function _connectSync(key){
       const localTs=parseInt(localStorage.getItem('lt-ts')||'0');
       if(!data||!data.ts){
         // Firebase leer — lokale Daten hochladen falls vorhanden
-        if(Object.keys(progress).length>0 && localTs>0) fbPush();
+        if((Object.keys(progress).length>0||SUBJECTS.length>0) && localTs>0) fbPush();
         else syncStatus('● Verbunden',true);
         return;
       }
@@ -1122,13 +1643,23 @@ function _connectSync(key){
       if(data.p){progress=data.p;saveP(false);}
       if(data.m){motivation=data.m;saveM(false);}
       if(data.r){lastReview=data.r;saveR(false);}
-      renderDayCard(); renderTopicList();
+      if(data.hl){halfLife=data.hl;saveHL(false);}
+      if(data.cp){cardProgress=data.cp;saveCP(false);}
+      if(data.s){SUBJECTS=data.s;saveSubjects(false);}
+      if(data.t){TOPICS=data.t;saveTopics(false);}
+      if(data.cs){CARDSETS=data.cs;saveCardsets(false);}
+      updateOnboardingState();
+      renderExamBar(); renderDayCard(); renderFilterBar(); renderTopicList(); renderManage();
       if(activeTab==='stats') renderStatsView();
       syncStatus('↓ '+new Date().toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'}),true);
     });
   }catch(e){ syncStatus('✗ '+e.message,false); }
 }
 
+// Wird beim App-Start aufgerufen (siehe init()): lädt die Firebase-SDK-Skripte
+// per <script>-Tag nach (nur falls überhaupt eine Config hinterlegt ist, um die
+// meisten Nutzer:innen ohne Sync nicht unnötig Daten laden zu lassen) und
+// verbindet dann.
 function initSync(){
   const cfg=getSyncCfg(), key=getSyncKey();
   if(!cfg||!key) return;
@@ -1143,6 +1674,9 @@ function initSync(){
   );
 }
 
+// "🔗 Aktivieren"-Button im ⚙-Modal: liest Schlüssel + Config-Textfeld, speichert
+// sie und verbindet. Pusht bewusst NICHT sofort (siehe Kommentar in _connectSync),
+// damit ein neues, noch leeres Gerät nicht versehentlich die Cloud-Daten überschreibt.
 function saveSync(){
   const key=(document.getElementById('sync-key-input')||{}).value||'';
   const raw=(document.getElementById('fb-config-input')||{}).value||'';
@@ -1163,9 +1697,14 @@ function toggleSyncHelp(){
 }
 
 // ── Manueller Export/Import ───────────────────────────────────────────────────
+// Alternative zum Cloud-Sync: der komplette State wird als ein JSON-Textblock
+// exportiert ({p,m,r,hl,s,t,v} — Fortschritt, Motivation, Wiederholungen,
+// Halbwertszeiten, Fächer, Themen, Versionsnummer), den man selbst z.B. per
+// Nachricht ans andere Gerät schickt und dort einfügt (importData()). Einmalig,
+// ohne Cloud-Account.
 
 function exportData(){
-  const data=JSON.stringify({p:progress,m:motivation,r:lastReview,v:2});
+  const data=JSON.stringify({p:progress,m:motivation,r:lastReview,hl:halfLife,cp:cardProgress,s:SUBJECTS,t:TOPICS,cs:CARDSETS,v:5});
   navigator.clipboard.writeText(data).then(()=>{
     const btn=document.getElementById('export-btn');
     btn.textContent='✓ Kopiert!'; btn.classList.add('copy-ok');
@@ -1173,6 +1712,8 @@ function exportData(){
   });
 }
 
+// Liest den per exportData() erzeugten Text wieder ein und ersetzt den
+// kompletten lokalen State damit.
 function importData(){
   const raw=(document.getElementById('import-input')||{}).value||'';
   try{
@@ -1180,23 +1721,432 @@ function importData(){
     if(data.p){progress=data.p;saveP();}
     if(data.m){motivation=data.m;saveM();}
     if(data.r){lastReview=data.r;saveR();}
+    if(data.hl){halfLife=data.hl;saveHL();}
+    if(data.cp){cardProgress=data.cp;saveCP();}
+    if(data.s){SUBJECTS=data.s;saveSubjects();}
+    if(data.t){TOPICS=data.t;saveTopics();}
+    if(data.cs){CARDSETS=data.cs;saveCardsets();}
     closeModal();
-    renderDayCard(); renderTopicList();
+    updateOnboardingState();
+    renderExamBar(); renderDayCard(); renderFilterBar(); renderTopicList(); renderManage();
+    if(activeTab==='stats') renderStatsView();
     alert('✓ Import erfolgreich!');
   }catch(e){
     alert('Ungültige Daten. Bitte den vollständigen exportierten Text einfügen.');
   }
 }
 
+// ── Verwalten (Fächer & Themen) ────────────────────────────────────────────────
+// Dieser Abschnitt bedient ZWEI Stellen im HTML mit demselben Inhalt:
+//  (a) den Einrichtungs-Bildschirm beim allerersten Start (#onboarding-content,
+//      solange noch keine Fächer angelegt sind bzw. "Fertig" nicht geklickt wurde)
+//  (b) das 🗂️-"Verwalten"-Modal (#manage-content), jederzeit später erreichbar
+// Beide zeigen exakt dieselbe Fach-/Themenliste inkl. Formulare (renderManage()
+// schreibt in beide Container gleichzeitig). Damit z.B. mgSaveSubject() beim
+// Auslesen der Formularfelder nicht aus versehen die (unsichtbare) Kopie im
+// jeweils anderen Container erwischt, bestimmt mgActiveContainer(), welcher der
+// beiden Container gerade tatsächlich sichtbar/aktiv ist.
+
+// mgState hält, welches Formular gerade offen ist (es ist immer höchstens eines
+// gleichzeitig offen: entweder "neues Fach", "Fach X bearbeiten", "neues Thema
+// zu Fach Y" oder "Thema Z bearbeiten").
+let mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null };
+
+function mgResetForms(){ mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null }; }
+
+// Liefert den Container, aus dem gerade tatsächlich gelesen/in den geschrieben
+// werden soll (siehe Erklärung oben): das Verwalten-Modal, falls es gerade offen
+// ist, sonst der Einrichtungs-Bildschirm.
+function mgActiveContainer(){
+  const modalOpen = document.getElementById('manage-bg').classList.contains('open');
+  return document.getElementById(modalOpen?'manage-content':'onboarding-content');
+}
+
+// Zeigt entweder den Einrichtungs-Bildschirm oder die eigentliche App an.
+// "Nicht onboarded" ODER "keine Fächer (mehr)" führt zurück zur Einrichtung —
+// letzteres greift z.B., wenn alle Fächer wieder gelöscht wurden.
+function updateOnboardingState(){
+  const onboarded = localStorage.getItem('lt-onboarded')==='1';
+  const show = !onboarded || SUBJECTS.length===0;
+  document.getElementById('onboarding-wrap').style.display = show?'':'none';
+  document.getElementById('app-wrap').style.display = show?'none':'';
+}
+
+// Der "✓ Fertig, los geht's!"-Button ist erst klickbar, sobald mind. ein Fach
+// UND mind. ein Thema angelegt wurden.
+function updateFinishBtn(){
+  const btn=document.getElementById('onboarding-finish-btn');
+  if(btn) btn.disabled = !(SUBJECTS.length>0 && TOPICS.length>0);
+}
+
+// Schließt die Einrichtung ab und schaltet dauerhaft auf die normale App-Ansicht um.
+function finishOnboarding(){
+  if(!(SUBJECTS.length>0 && TOPICS.length>0)) return;
+  localStorage.setItem('lt-onboarded','1');
+  refreshAll();
+}
+
+// Sammel-Funktion, die nach so gut wie jeder Datenänderung (Fach/Thema
+// angelegt/bearbeitet/gelöscht, Sync-Update von einem anderen Gerät, Import)
+// aufgerufen wird, um wirklich alle betroffenen Ansichten neu zu zeichnen.
+function refreshAll(){
+  updateOnboardingState();
+  renderExamBar(); renderDayCard(); renderFilterBar(); renderTopicList();
+  if(activeTab==='stats') renderStatsView();
+  renderManage();
+}
+
+// Baut eine Reihe von 1-5 antippbaren Punkten (für Wichtigkeit/Schwierigkeit in
+// den Verwalten-Formularen). value wird als data-value am Container gespeichert
+// und von mgPickDot() beim Klick aktualisiert; mgSaveSubject/mgSaveTopic lesen
+// diesen data-value beim Speichern wieder aus.
+function dotPicker(id, value){
+  return `<div class="mg-dot-picker" id="${id}" data-value="${value}">${Array.from({length:5},(_,i)=>{
+    const v=i+1;
+    return `<button type="button" class="mg-dot-btn"
+      style="${v<=value?'background:#007aff;border-color:#007aff;color:#fff':''}"
+      onclick="mgPickDot(this,${v})">${v}</button>`;
+  }).join('')}</div>`;
+}
+
+function mgPickDot(btn,val){
+  const row=btn.closest('.mg-dot-picker');
+  row.dataset.value=val;
+  [...row.children].forEach((b,i)=>{
+    if(i<val){ b.style.background='#007aff'; b.style.borderColor='#007aff'; b.style.color='#fff'; }
+    else { b.style.background=''; b.style.borderColor=''; b.style.color=''; }
+  });
+}
+
+// Formular "Fach anlegen/bearbeiten" (s=null -> neu, sonst das zu bearbeitende
+// Fach-Objekt zum Vorbefüllen). Speichern läuft über mgSaveSubject(s?.id).
+function mgSubjectForm(s){
+  return `<div class="mg-form">
+    <div class="mg-field">
+      <label>Name</label>
+      <input type="text" id="mg-s-name" value="${s?esc(s.name):''}" placeholder="z.B. Analysis I">
+    </div>
+    <div class="mg-field-row">
+      <div class="mg-field">
+        <label>Kurzcode</label>
+        <input type="text" id="mg-s-short" maxlength="5" value="${s?esc(s.short):''}" placeholder="z.B. ANA">
+      </div>
+      <div class="mg-field">
+        <label>Prüfungsdatum</label>
+        <input type="date" id="mg-s-date" value="${s?s.examDate:''}">
+      </div>
+    </div>
+    <div class="mg-check-row">
+      <input type="checkbox" id="mg-s-ob" ${s&&s.openBook?'checked':''}>
+      <label for="mg-s-ob">Open Book (weniger Lernzeit pro Thema)</label>
+    </div>
+    <div class="mg-form-actions">
+      <button class="mg-btn-cancel" onclick="mgCancel()">Abbrechen</button>
+      <button class="mg-btn-save" onclick="mgSaveSubject(${s?`'${s.id}'`:'null'})">Speichern</button>
+    </div>
+  </div>`;
+}
+
+// Formular "Thema anlegen/bearbeiten" zu einem bestimmten Fach (subjId).
+function mgTopicForm(t, subjId){
+  return `<div class="mg-form">
+    <div class="mg-field">
+      <label>Thema</label>
+      <input type="text" id="mg-t-name" value="${t?esc(t.name):''}" placeholder="z.B. Grenzwerte">
+    </div>
+    <div class="mg-field">
+      <label>Gruppe/Kapitel (optional)</label>
+      <input type="text" id="mg-t-grp" value="${t?esc(t.grp||''):''}" placeholder="z.B. Kapitel 3">
+    </div>
+    <div class="mg-field-row">
+      <div class="mg-field">
+        <label>Wichtigkeit</label>
+        ${dotPicker('mg-t-w', t?t.w:3)}
+      </div>
+      <div class="mg-field">
+        <label>Schwierigkeit</label>
+        ${dotPicker('mg-t-d', t?(t.d||3):3)}
+      </div>
+    </div>
+    <div class="mg-field">
+      <label>Hinweis / Merkpunkte (optional)</label>
+      <textarea id="mg-t-hint" placeholder="z.B. wichtige Formeln, Reaktionen, Stichworte…">${t?esc(t.hint||''):''}</textarea>
+    </div>
+    <div class="mg-form-actions">
+      <button class="mg-btn-cancel" onclick="mgCancel()">Abbrechen</button>
+      <button class="mg-btn-save" onclick="mgSaveTopic(${t?`'${t.id}'`:'null'},'${subjId}')">Speichern</button>
+    </div>
+  </div>`;
+}
+
+// Eine einzelne Themen-Zeile innerhalb eines Fachs in der Verwalten-Liste
+// (Name, Wichtigkeits-/Schwierigkeits-Punkte, Bearbeiten/Löschen-Icons) — bei
+// aktivem Bearbeiten-Modus wird darunter direkt mgTopicForm() eingeblendet.
+function mgTopicBlock(t){
+  const editing = mgState.editTopic===t.id;
+  const wDots=Array.from({length:5},(_,i)=>`<div class="w-dot" style="background:${i<t.w?'#007aff':'var(--bg3)'}"></div>`).join('');
+  const dDots=Array.from({length:5},(_,i)=>`<div class="w-dot" style="background:${i<(t.d||3)?'#ff9500':'var(--bg3)'}"></div>`).join('');
+  return `<div class="mg-topic-row">
+    <div class="mg-topic-body">
+      <div class="mg-topic-name">${esc(t.name)}</div>
+      ${t.grp?`<div class="mg-topic-grp">${esc(t.grp)}</div>`:''}
+    </div>
+    <div class="mg-topic-dots">
+      <div class="w-dots" title="Wichtigkeit">${wDots}</div>
+      <div class="w-dots" title="Schwierigkeit">${dDots}</div>
+    </div>
+    <button class="mg-icon-btn" onclick="mgOpenEditTopic('${t.id}')">✏️</button>
+    <button class="mg-icon-btn" onclick="mgDeleteTopic('${t.id}')">🗑</button>
+  </div>
+  ${editing?mgTopicForm(t,t.subj):''}`;
+}
+
+// Formular "Karteikarten-Set hinzufügen" für ein Fach: neue Karten/Tag (rein
+// informativ, Anki/Noji-Stil, fließt aktuell nicht in Berechnungen ein) + pro
+// bestehendem Thema des Fachs eine Kartenzahl. Themen mit 0 Karten werden beim
+// Speichern nicht als Zuordnung übernommen. Gesamtzahl ergibt sich als Summe der
+// Zuordnungen, es gibt bewusst kein separates "Gesamt"-Feld (sonst könnten beide
+// Angaben widersprüchlich sein).
+function mgCardsetForm(subjId){
+  const topics=TOPICS.filter(t=>t.subj===subjId);
+  return `<div class="mg-form">
+    <div class="mg-field">
+      <label>Neue Karten pro Tag</label>
+      <input type="number" id="mg-cs-newperday" min="1" value="20" placeholder="z.B. 20">
+    </div>
+    <div class="mg-field">
+      <label>Karten pro Thema</label>
+      ${topics.length===0
+        ? `<div style="font-size:11px;color:var(--txt2)">Noch keine Themen in diesem Fach angelegt.</div>`
+        : topics.map(t=>`<div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <span style="flex:1;font-size:12px">${esc(t.name)}</span>
+            <input type="number" min="0" class="h-input" style="width:70px" id="mg-cs-topic-${t.id}" placeholder="0">
+          </div>`).join('')}
+    </div>
+    <div class="mg-form-actions">
+      <button class="mg-btn-cancel" onclick="mgCancel()">Abbrechen</button>
+      <button class="mg-btn-save" onclick="mgSaveCardset('${subjId}')">Speichern</button>
+    </div>
+  </div>`;
+}
+
+// Eine Zeile pro bestehendem Karteikarten-Set in der Verwalten-Liste: Zusammenfassung
+// (Gesamtkarten, neue/Tag, Aufteilung auf Themen) + Löschen. Kein Bearbeiten-Modus —
+// ein Set wird bei Bedarf gelöscht und neu angelegt, das hält die Formulare einfach.
+function mgCardsetBlock(cs){
+  const total=cs.allocations.reduce((sum,a)=>sum+a.total,0);
+  const detail=cs.allocations.map(a=>{const t=T_MAP[a.topic];return t?`${esc(t.name)}: ${a.total}`:null;}).filter(Boolean).join(' · ');
+  return `<div class="mg-topic-row">
+    <div class="mg-topic-body">
+      <div class="mg-topic-name">🗂️ ${total} Karten · ${cs.newPerDay}/Tag neu</div>
+      ${detail?`<div class="mg-topic-grp">${detail}</div>`:''}
+    </div>
+    <button class="mg-icon-btn" onclick="mgDeleteCardset('${cs.id}')">🗑</button>
+  </div>`;
+}
+
+// Eine ganze Fach-Karte in der Verwalten-Liste: Fach-Kopfzeile + (falls
+// bearbeitet wird) mgSubjectForm() + Liste aller Themen dieses Fachs (mgTopicBlock)
+// + "+ Thema hinzufügen" + Karteikarten-Sets dieses Fachs + "+ Karteikarten-Set hinzufügen".
+function mgSubjectCard(s){
+  const topics=TOPICS.filter(t=>t.subj===s.id);
+  const cardsets=CARDSETS.filter(cs=>cs.subj===s.id);
+  const d=Math.ceil(daysUntil(s.examDate));
+  const dateStr=new Date(s.examDate+'T12:00:00').toLocaleDateString('de-CH',{day:'numeric',month:'short',year:'numeric'});
+  const editing=mgState.editSubject===s.id;
+  return `<div class="mg-subj">
+    <div class="mg-subj-hdr">
+      <span class="t-badge" style="background:${s.bg};color:${s.tx}">${esc(s.short)}</span>
+      <div class="mg-subj-info">
+        <div class="mg-subj-name">${esc(s.name)}</div>
+        <div class="mg-subj-meta">${dateStr} · ${d}d${s.openBook?' · 📖 Open Book':''}</div>
+      </div>
+      <div class="mg-subj-actions">
+        <button class="mg-icon-btn" onclick="mgOpenEditSubject('${s.id}')">✏️</button>
+        <button class="mg-icon-btn" onclick="mgDeleteSubject('${s.id}')">🗑</button>
+      </div>
+    </div>
+    ${editing?mgSubjectForm(s):''}
+    <div class="mg-topics">
+      ${topics.map(t=>mgTopicBlock(t)).join('')}
+      ${mgState.addTopicFor===s.id?mgTopicForm(null,s.id):`<button class="mg-add-topic" onclick="mgOpenAddTopic('${s.id}')">+ Thema hinzufügen</button>`}
+    </div>
+    <div class="mg-topics">
+      ${cardsets.map(cs=>mgCardsetBlock(cs)).join('')}
+      ${mgState.addCardsetFor===s.id?mgCardsetForm(s.id):`<button class="mg-add-topic" onclick="mgOpenAddCardset('${s.id}')">+ Karteikarten-Set hinzufügen</button>`}
+    </div>
+  </div>`;
+}
+
+// Baut den kompletten Inhalt von "Verwalten" als HTML-String zusammen (alle
+// Fach-Karten + "+ Neues Fach"-Button bzw. dessen Formular).
+function mgBodyHtml(){
+  const sorted=[...SUBJECTS].sort((a,b)=>new Date(a.examDate)-new Date(b.examDate));
+  const subjectsHtml = sorted.map(s=>mgSubjectCard(s)).join('')
+    || `<div class="all-done-msg" style="color:var(--txt2);font-style:normal">Noch keine Fächer angelegt.</div>`;
+  return `<div class="mg-list">${subjectsHtml}</div>
+    ${mgState.newSubjectOpen?mgSubjectForm(null):`<button class="mg-add-topic" style="border-style:solid;border-color:#007aff;color:#007aff" onclick="mgOpenAddSubject()">+ Neues Fach</button>`}`;
+}
+
+// Schreibt mgBodyHtml() in BEIDE möglichen Ziel-Container (siehe Erklärung ganz
+// oben im Abschnitt) — nur einer davon ist gerade sichtbar, das ist unschädlich.
+function renderManage(){
+  const html=mgBodyHtml();
+  const on=document.getElementById('onboarding-content');
+  const mo=document.getElementById('manage-content');
+  if(on) on.innerHTML=html;
+  if(mo) mo.innerHTML=html;
+  updateFinishBtn();
+}
+
+// Öffnet jeweils genau ein Formular (siehe mgState oben) und schließt automatisch
+// alle anderen, da mgResetForms() zuerst aufgerufen wird.
+function mgOpenAddSubject(){ mgResetForms(); mgState.newSubjectOpen=true; renderManage(); }
+function mgOpenEditSubject(id){ mgResetForms(); mgState.editSubject=id; renderManage(); }
+function mgOpenAddTopic(subjId){ mgResetForms(); mgState.addTopicFor=subjId; renderManage(); }
+function mgOpenEditTopic(id){ mgResetForms(); mgState.editTopic=id; renderManage(); }
+function mgOpenAddCardset(subjId){ mgResetForms(); mgState.addCardsetFor=subjId; renderManage(); }
+
+// Speichert das Karteikarten-Set-Formular: liest die Neue-Karten/Tag-Zahl sowie pro
+// Thema die zugeordnete Kartenzahl aus (0 oder leer = kein Bezug zu diesem Thema).
+function mgSaveCardset(subjId){
+  const c=mgActiveContainer();
+  const newPerDay=parseInt(c.querySelector('#mg-cs-newperday').value)||20;
+  const topics=TOPICS.filter(t=>t.subj===subjId);
+  const allocations=topics.map(t=>{
+    const el=c.querySelector('#mg-cs-topic-'+t.id);
+    return {topic:t.id, total:parseInt(el&&el.value)||0};
+  }).filter(a=>a.total>0);
+  if(allocations.length===0){ alert('Bitte mindestens einem Thema Karten zuordnen.'); return; }
+  CARDSETS.push({id:genId('cs'), subj:subjId, newPerDay, allocations});
+  saveCardsets();
+  mgResetForms();
+  refreshAll();
+}
+
+// Löscht ein Karteikarten-Set. Der bisherige cardProgress der betroffenen Themen
+// bleibt gespeichert, zählt aber nicht mehr (getCardTotal() sinkt ggf. auf 0), solange
+// kein neues Set mit Bezug zu diesen Themen existiert.
+function mgDeleteCardset(id){
+  if(!confirm('Karteikarten-Set wirklich löschen?')) return;
+  CARDSETS=CARDSETS.filter(cs=>cs.id!==id);
+  saveCardsets();
+  refreshAll();
+}
+function mgCancel(){ mgResetForms(); renderManage(); }
+
+// Speichert das Fach-Formular: id=null -> neues Fach anlegen (bekommt automatisch
+// die nächste Farbe aus PALETTE), sonst wird das bestehende Fach-Objekt in-place
+// aktualisiert (Object.assign auf S_MAP[id], das dieselbe Referenz wie in
+// SUBJECTS[] ist). Kurzcode wird, falls leer gelassen, aus dem Namen abgeleitet.
+function mgSaveSubject(id){
+  const c=mgActiveContainer();
+  const name=(c.querySelector('#mg-s-name').value||'').trim();
+  if(!name){ alert('Bitte einen Namen eingeben.'); return; }
+  let short=(c.querySelector('#mg-s-short').value||'').trim().toUpperCase();
+  if(!short) short=(name.replace(/[^A-Za-zÄÖÜäöü]/g,'').slice(0,4)||'FA').toUpperCase();
+  const examDate=c.querySelector('#mg-s-date').value;
+  if(!examDate){ alert('Bitte ein Prüfungsdatum wählen.'); return; }
+  const openBook=c.querySelector('#mg-s-ob').checked;
+  if(id){
+    Object.assign(S_MAP[id],{name,short,examDate,openBook});
+  } else {
+    const pal=PALETTE[SUBJECTS.length%PALETTE.length];
+    SUBJECTS.push({id:genId('s'),name,short,examDate,openBook,...pal});
+  }
+  saveSubjects();
+  mgResetForms();
+  refreshAll();
+}
+
+// Löscht ein Fach inkl. aller seiner Themen (mit Rückfrage, wenn Themen
+// betroffen sind) und räumt zugehörige Fortschritts-/Motivationsdaten auf.
+function mgDeleteSubject(id){
+  const s=S_MAP[id];
+  const n=TOPICS.filter(t=>t.subj===id).length;
+  if(!confirm(`"${s.name}" wirklich löschen?${n?` Alle ${n} zugehörigen Themen werden ebenfalls gelöscht.`:''}`)) return;
+  TOPICS=TOPICS.filter(t=>t.subj!==id);
+  saveTopics(false);
+  SUBJECTS=SUBJECTS.filter(s2=>s2.id!==id);
+  saveSubjects();
+  purgeSubjectData(id);
+  mgResetForms();
+  refreshAll();
+}
+
+// Speichert das Themen-Formular, analog zu mgSaveSubject() oben.
+function mgSaveTopic(id, subjId){
+  const c=mgActiveContainer();
+  const name=(c.querySelector('#mg-t-name').value||'').trim();
+  if(!name){ alert('Bitte einen Themennamen eingeben.'); return; }
+  const grp=(c.querySelector('#mg-t-grp').value||'').trim();
+  const w=parseInt(c.querySelector('#mg-t-w').dataset.value)||3;
+  const d=parseInt(c.querySelector('#mg-t-d').dataset.value)||3;
+  const hint=(c.querySelector('#mg-t-hint').value||'').trim();
+  if(id){
+    Object.assign(T_MAP[id],{name,grp,w,d,hint});
+  } else {
+    TOPICS.push({id:genId('t'),subj:subjId,name,grp,w,d,hint});
+  }
+  saveTopics();
+  mgResetForms();
+  refreshAll();
+}
+
+// Löscht ein einzelnes Thema (mit Rückfrage) inkl. seiner Fortschrittsdaten.
+function mgDeleteTopic(id){
+  const t=T_MAP[id];
+  if(!confirm(`Thema "${t.name}" wirklich löschen?`)) return;
+  TOPICS=TOPICS.filter(t2=>t2.id!==id);
+  saveTopics();
+  purgeTopicData(id);
+  mgResetForms();
+  refreshAll();
+}
+
+// openManage()/closeManage()/manageBgClick() steuern das 🗂️-Verwalten-Modal;
+// alle drei Modals in dieser App (hier, Tagesplan, Motivation) folgen demselben
+// Bottom-Sheet-Muster: .classList.add/remove('open') triggert die CSS-Transition
+// in .modal-bg.open, *BgClick(e) schließt beim Klick auf den abgedunkelten
+// Hintergrund (aber nicht beim Klick auf das Sheet selbst).
+function openManage(){
+  mgResetForms();
+  renderManage();
+  document.getElementById('manage-bg').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeManage(){ document.getElementById('manage-bg').classList.remove('open'); document.body.style.overflow=''; renderManage(); }
+function manageBgClick(e){ if(e.target===document.getElementById('manage-bg')) closeManage(); }
+
+// ❓-"Kurz erklärt"-Tutorial-Modal: öffnet sich automatisch einmalig beim
+// allerersten Besuch (siehe init() unten, Flag 'lt-help-seen'), ist danach aber
+// jederzeit über den Header-Button erneut aufrufbar.
+function openHelp(){
+  document.getElementById('help-bg').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeHelp(){ document.getElementById('help-bg').classList.remove('open'); document.body.style.overflow=''; }
+function helpBgClick(e){ if(e.target===document.getElementById('help-bg')) closeHelp(); }
+
 // ── Init ──────────────────────────────────────────────────────────────────────
+// Einstiegspunkt: einmal beim Laden der Seite ausgeführt (Aufruf init() steht
+// direkt danach, ganz unten in der Datei). Zeichnet alle Ansichten einmal initial,
+// versucht danach den Cloud-Sync zu verbinden (falls konfiguriert) und zeigt
+// beim allerersten jemals erfolgten Besuch automatisch das Tutorial-Modal.
 
 function init(){
   renderHeader();
+  updateOnboardingState();
   renderExamBar();
   renderDayCard();
   renderFilterBar();
   renderTopicList();
+  renderManage();
   initSync();
+  if(!localStorage.getItem('lt-help-seen')){
+    localStorage.setItem('lt-help-seen','1');
+    openHelp();
+  }
 }
 
 init();
