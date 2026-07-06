@@ -659,8 +659,12 @@ function getCardTotal(topicId){
 function getCardProgress(topicId){ return cardProgress[topicId]||{introduced:0,emaKnown:0,lastLogDate:null}; }
 // "Review-Thema" = ein Auswendiglern-Thema (Fach nicht Open-Book), das schon
 // mindestens 60% gelernt ist und deshalb ab jetzt regelmäßig wiederholt statt neu
-// gelernt werden sollte (siehe calcScore()/renderDayCard() weiter unten).
-function isReviewTopic(t){ return !S_MAP[t.subj].openBook && getPct(t.id)>=60 }
+// gelernt werden sollte (siehe calcScore()/renderDayCard() weiter unten). Zählt
+// assessedPct statt des rohen Reglers, damit reine Karteikarten-Praxis (ohne den
+// manuellen Regler zu bewegen) ein Thema ebenfalls in den Review-Modus bringt —
+// sonst bleibt das "Heute wiederholen"-Häkchen aus, obwohl logCardSession()
+// lastReview längst korrekt auf heute gesetzt hat.
+function isReviewTopic(t){ return !S_MAP[t.subj].openBook && assessedPct(t, getPct(t.id))>=60 }
 function reviewedToday(id){ return lastReview[id]===todayStr() }
 
 // Werden von den Slidern/Eingabefeldern in der aufgeklappten Themenzeile aufgerufen.
