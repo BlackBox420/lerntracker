@@ -1099,7 +1099,10 @@ function markReview(id, success=true){
 // updateHalfLife() ein — eine bessere Grundlage als die modellierte Schätzung aus
 // retention(), da wirklich gemessen statt geschätzt. Schwelle 70% statt der sonst
 // üblichen 90%-Zielretention, weil das hier eine grobe Tageszusammenfassung über
-// viele Karten ist, kein Einzelkarten-Urteil.
+// viele Karten ist, kein Einzelkarten-Urteil. Zählt außerdem als heutige
+// Wiederholung (lastReview): Karteikarten machen IST die Wiederholung, daher
+// verschwindet der Gewusst/Vergessen-Button in der Übersicht automatisch mit,
+// ohne dass man beides doppelt eintragen muss.
 function logCardSession(id, neuDone, reviewDone, known){
   const total=getCardTotal(id);
   const done=neuDone+reviewDone;
@@ -1115,6 +1118,8 @@ function logCardSession(id, neuDone, reviewDone, known){
   };
   saveCP(false);
   updateHalfLife(id, t, knownPct, knownPct>=0.7);
+  lastReview[id]=todayStr();
+  saveR();
   refreshAll();
 }
 
