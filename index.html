@@ -784,6 +784,16 @@ function subjectPressure(subjId){
   return (remainingMin/days)/getAvailableMinutesPerDay();
 }
 
+// "Pausiert" (siehe pauseTopic() weiter unten): manuell für ein paar Tage
+// zurückgestellt — z.B. weil trotz wiederholtem Üben (Notizen, Übungen) gerade
+// kein neues Material zum Weiterkommen verfügbar ist. Score wird dafür stark
+// gedämpft (siehe calcScore()), das Thema bleibt aber sichtbar in der Liste,
+// statt lautlos zu verschwinden. Läuft nach t.pausedUntil automatisch wieder
+// ab — daher hier nur ein Datumsvergleich, keine eigene Zustandsverwaltung nötig.
+function isPaused(t){
+  return !!(t.pausedUntil && t.pausedUntil>=todayStr());
+}
+
 function calcScore(t, pctOverride){
   const s = S_MAP[t.subj];
   const days  = daysUntil(s.examDate);
@@ -811,7 +821,10 @@ function calcScore(t, pctOverride){
   const reviewScore = !s.openBook&&pct>0
     ? (1-retention(t))*urgency*t.w*0.5*motivFactor
     : 0;
-  return learnScore+reviewScore;
+  const score = learnScore+reviewScore;
+  // Gedämpft statt auf 0 gesetzt, damit ein pausiertes Thema nicht komplett aus
+  // der sortierten Liste verschwindet (siehe isPaused()) — nur ganz nach unten rutscht.
+  return isPaused(t) ? score*0.1 : score;
 }
 
 // Score -> Ampelfarbe für Zahlen/Balken in der ganzen App (rot=dringend ... grau=erledigt/unwichtig).
@@ -961,6 +974,8 @@ function renderTopicList(){
     const isRev=isReviewTopic(t);
     const done=reviewedToday(t.id);
     const isExp=expanded.has(t.id);
+    const paused=isPaused(t);
+    const pausedDateStr=t.pausedUntil?new Date(t.pausedUntil+'T12:00:00').toLocaleDateString('de-CH',{day:'numeric',month:'short'}):'';
     const wDots=Array.from({length:5},(_,di)=>
       `<div class="w-dot" style="background:${di<t.w?s.color:'var(--bg3)'}"></div>`).join('');
     const dDots=Array.from({length:5},(_,di)=>
@@ -971,7 +986,7 @@ function renderTopicList(){
       <div class="t-row-main">
         <span class="t-rank">${i+1}</span>
         <span class="t-badge" style="background:${s.bg};color:${s.tx}">${esc(s.short)}</span>
-        <span class="t-name">${esc(t.name)}</span>
+        <span class="t-name">${esc(t.name)}${paused?`<span title="Pausiert bis ${pausedDateStr}" style="margin-left:4px">⏸</span>`:''}</span>
         <div class="t-right">
           ${isRev?`<button class="chk-btn${done?' done':''}"
             style="border-color:${done?'#34c759':s.color};color:${done?'#fff':s.color}"
@@ -990,6 +1005,10 @@ function renderTopicList(){
           <div class="w-dots" title="Schwierigkeit">${dDots}</div>
         </div>
         ${t.hint?`<div style="font-size:10px;color:var(--txt3);font-style:italic;margin-bottom:6px;line-height:1.4">${esc(t.hint)}</div>`:''}
+        ${paused?`<div style="font-size:11px;color:var(--txt2);margin-bottom:6px;display:flex;align-items:center;gap:8px">
+          <span>⏸ Pausiert bis ${pausedDateStr}${t.pauseReason?` (${esc(t.pauseReason)})`:''}</span>
+          <a href="#" onclick="event.stopPropagation();unpauseTopic('${t.id}');return false" style="color:#007aff;text-decoration:none;font-weight:600">Fortsetzen</a>
+        </div>`:''}
 
         <div class="t-ctrl-row">
           <div class="ctrl">
@@ -1016,6 +1035,9 @@ function renderTopicList(){
             :`<button style="flex:1;padding:7px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:#34c759;color:#fff" onclick="event.stopPropagation();markReview('${t.id}',true)">✓ Gewusst</button>
               <button style="flex:1;padding:7px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:#ff3b30;color:#fff" onclick="event.stopPropagation();markReview('${t.id}',false)">✗ Vergessen</button>`
           }
+        </div>`:''}
+        ${!paused?`<div style="margin-top:6px">
+          <button style="padding:6px 10px;border-radius:8px;border:.5px solid var(--border);font-size:10px;font-weight:600;cursor:pointer;background:var(--bg2);color:var(--txt2)" onclick="event.stopPropagation();pauseTopic('${t.id}')">⏸ Pausieren (${PAUSE_DAYS} Tage)</button>
         </div>`:''}
       </div>`:''}
     </div>`;
@@ -1167,6 +1189,33 @@ function savePct(id,val){
 }
 
 function saveHrs(id,val){ setHrs(id,parseFloat(val)||'') }
+
+// Manuelles Pausieren eines Themas für PAUSE_DAYS Tage (siehe isPaused()):
+// für den Fall, dass trotz wiederholtem Üben kein neues Material zum
+// Weiterkommen verfügbar ist, die Priorität aber trotzdem oben bleibt.
+// Läuft automatisch wieder ab, statt ein stiller Dauer-Mute zu werden.
+const PAUSE_DAYS=3;
+function pauseTopic(id){
+  const t=T_MAP[id];
+  if(!t) return;
+  const raw=prompt('Kurzer Grund (optional), z.B. "kein neues Material"');
+  if(raw===null) return; // abgebrochen
+  const until=new Date(); until.setDate(until.getDate()+PAUSE_DAYS);
+  t.pausedUntil=until.toISOString().split('T')[0];
+  t.pauseReason=raw.trim();
+  saveTopics();
+  renderDayCard();
+  renderTopicList();
+}
+function unpauseTopic(id){
+  const t=T_MAP[id];
+  if(!t) return;
+  delete t.pausedUntil;
+  delete t.pauseReason;
+  saveTopics();
+  renderDayCard();
+  renderTopicList();
+}
 
 // Analog zu livePct/savePct, nur für den Motivations-Regler im ⚙-Modal.
 function liveMotiv(sid,el){
