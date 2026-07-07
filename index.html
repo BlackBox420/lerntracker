@@ -667,7 +667,7 @@ function getCardProgress(topicId){ return cardProgress[topicId]||{introduced:0,e
 // manuellen Regler zu bewegen) ein Thema ebenfalls in den Review-Modus bringt —
 // sonst bleibt das "Heute wiederholen"-Häkchen aus, obwohl logCardSession()
 // lastReview längst korrekt auf heute gesetzt hat.
-function isReviewTopic(t){ return !S_MAP[t.subj].openBook && assessedPct(t, getPct(t.id))>=60 }
+function isReviewTopic(t){ return !needsNoMemorization(S_MAP[t.subj]) && assessedPct(t, getPct(t.id))>=60 }
 function reviewedToday(id){ return lastReview[id]===todayStr() }
 
 // Werden von den Slidern/Eingabefeldern in der aufgeklappten Themenzeile aufgerufen.
@@ -794,6 +794,18 @@ function isPaused(t){
   return !!(t.pausedUntil && t.pausedUntil>=todayStr());
 }
 
+// Entkoppelt den zweiten, bisher an s.openBook mitgebundenen Effekt: "kein
+// Auswendiglernen nötig" (unterdrückt reviewScore/Vergessenskurve, s.u.), separat
+// vom eigentlichen Open-Book-Flag (das nur noch den geschätzten Lernaufwand in
+// totalEffortMinutes()/estimateDur() steuert) — manche Open-Book-Klausuren
+// verlangen trotzdem tiefes Verständnis statt reinem Nachschlagen. Fächer, die
+// das neue Feld noch nie über die eigene Checkbox gesetzt haben, übernehmen
+// weiterhin den alten Wert von openBook, damit sich bestehende Fächer nicht
+// unbemerkt anders verhalten.
+function needsNoMemorization(s){
+  return s.noMemorize!==undefined ? s.noMemorize : s.openBook;
+}
+
 function calcScore(t, pctOverride){
   const s = S_MAP[t.subj];
   const days  = daysUntil(s.examDate);
@@ -818,7 +830,7 @@ function calcScore(t, pctOverride){
   const learnScore  = t.w*urgency*gap*machbarkeit*motivFactor*diffBoost;
   // Review-Priorität steigt kontinuierlich mit dem Vergessen (1-retention),
   // statt nur binär "heute schon wiederholt oder nicht".
-  const reviewScore = !s.openBook&&pct>0
+  const reviewScore = !needsNoMemorization(s)&&pct>0
     ? (1-retention(t))*urgency*t.w*0.5*motivFactor
     : 0;
   const score = learnScore+reviewScore;
@@ -2072,7 +2084,11 @@ function mgSubjectForm(s){
     </div>
     <div class="mg-check-row">
       <input type="checkbox" id="mg-s-ob" ${s&&s.openBook?'checked':''}>
-      <label for="mg-s-ob">Open Book (weniger Lernzeit pro Thema)</label>
+      <label for="mg-s-ob">Weniger Lernaufwand nötig (z.B. Open Book / Formelsammlung erlaubt)</label>
+    </div>
+    <div class="mg-check-row">
+      <input type="checkbox" id="mg-s-nomem" ${s&&needsNoMemorization(s)?'checked':''}>
+      <label for="mg-s-nomem">Kein Auswendiglernen nötig (keine Wiederholungs-Erinnerungen)</label>
     </div>
     <div class="mg-form-actions">
       <button class="mg-btn-cancel" onclick="mgCancel()">Abbrechen</button>
@@ -2282,11 +2298,12 @@ function mgSaveSubject(id){
   const examDate=c.querySelector('#mg-s-date').value;
   if(!examDate){ alert('Bitte ein Prüfungsdatum wählen.'); return; }
   const openBook=c.querySelector('#mg-s-ob').checked;
+  const noMemorize=c.querySelector('#mg-s-nomem').checked;
   if(id){
-    Object.assign(S_MAP[id],{name,short,examDate,openBook});
+    Object.assign(S_MAP[id],{name,short,examDate,openBook,noMemorize});
   } else {
     const pal=PALETTE[SUBJECTS.length%PALETTE.length];
-    SUBJECTS.push({id:genId('s'),name,short,examDate,openBook,...pal});
+    SUBJECTS.push({id:genId('s'),name,short,examDate,openBook,noMemorize,...pal});
   }
   saveSubjects();
   mgResetForms();
