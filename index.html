@@ -763,7 +763,7 @@ function totalEffortMinutes(t){
   const base = t.w>=5?120 : t.w===4?90 : t.w===3?60 : 45;
   const sessions = 2+(t.d||3); // d:1→3, d:3→5, d:5→7 Sitzungen bis zur vollen Beherrschung
   const total = base*sessions;
-  return s.openBook ? total*0.65 : total;
+  return needsLessEffort(s) ? total*0.65 : total;
 }
 
 // Pensum-Druck eines Fachs nach dem Least-Laxity-Prinzip aus dem Echtzeit-Scheduling
@@ -794,14 +794,20 @@ function isPaused(t){
   return !!(t.pausedUntil && t.pausedUntil>=todayStr());
 }
 
-// Entkoppelt den zweiten, bisher an s.openBook mitgebundenen Effekt: "kein
-// Auswendiglernen nötig" (unterdrückt reviewScore/Vergessenskurve, s.u.), separat
-// vom eigentlichen Open-Book-Flag (das nur noch den geschätzten Lernaufwand in
-// totalEffortMinutes()/estimateDur() steuert) — manche Open-Book-Klausuren
-// verlangen trotzdem tiefes Verständnis statt reinem Nachschlagen. Fächer, die
-// das neue Feld noch nie über die eigene Checkbox gesetzt haben, übernehmen
-// weiterhin den alten Wert von openBook, damit sich bestehende Fächer nicht
-// unbemerkt anders verhalten.
+// s.openBook selbst ist mittlerweile rein informativ (nur noch das "📖 Open
+// Book"-Badge in der Anzeige) — ob eine Prüfung Open Book ist, sagt für sich
+// genommen noch nichts darüber aus, ob dadurch auch tatsächlich weniger
+// Lernaufwand nötig ist oder ob man sich das Auswendiglernen sparen kann
+// (manche Open-Book-Klausuren verlangen trotzdem tiefe Anwendung). Diese zwei
+// Effekte sind daher als je EIGENES Feld auf dem Fach abbildbar:
+//  - needsLessEffort(): steuert totalEffortMinutes()/estimateDur() (×0.65)
+//  - needsNoMemorization(): steuert reviewScore/isReviewTopic() (Vergessenskurve)
+// Fächer, die die jeweilige neue Checkbox noch nie explizit gesetzt haben,
+// übernehmen weiterhin den alten Wert von openBook (das früher beides zugleich
+// bedeutete), damit sich bestehende Fächer nicht unbemerkt anders verhalten.
+function needsLessEffort(s){
+  return s.lowEffort!==undefined ? s.lowEffort : s.openBook;
+}
 function needsNoMemorization(s){
   return s.noMemorize!==undefined ? s.noMemorize : s.openBook;
 }
@@ -1268,15 +1274,16 @@ function fmtTime(mins){
 // Schätzt, wie viele Minuten eine Lerneinheit zu einem Thema dauern sollte.
 // Review-Themen bekommen pauschal 30min. Sonst: Basis-Dauer nach Wichtigkeit (w),
 // skaliert mit der noch offenen Lücke (gap: bei 100% Fortschritt nur noch 35% der
-// Basis-Zeit) und der Schwierigkeit (diffMod), Open-Book-Fächer brauchen weniger
-// Auswendig-Zeit (*0.65). Ergebnis wird auf 15-Minuten-Schritte gerundet, min. 30.
+// Basis-Zeit) und der Schwierigkeit (diffMod), Fächer mit "weniger Lernaufwand
+// nötig" (siehe needsLessEffort() — unabhängig vom reinen Open-Book-Anzeige-Flag)
+// brauchen weniger Zeit (*0.65). Ergebnis wird auf 15-Minuten-Schritte gerundet, min. 30.
 function estimateDur(t){
   const pct=getPct(t.id), gap=Math.max(0,1-pct/100), s=S_MAP[t.subj];
   if(isReviewTopic(t)) return 30;
   const base = t.w>=5?120 : t.w===4?90 : t.w===3?60 : 45;
   const diffMod = 0.8 + (t.d||3)*0.1; // d:1→0.9, d:3→1.1, d:5→1.3
   const scaled = base*(0.35+0.65*gap)*diffMod;
-  const adj = s.openBook ? scaled*0.65 : scaled;
+  const adj = needsLessEffort(s) ? scaled*0.65 : scaled;
   return Math.max(30, Math.round(adj/15)*15);
 }
 
@@ -2084,7 +2091,11 @@ function mgSubjectForm(s){
     </div>
     <div class="mg-check-row">
       <input type="checkbox" id="mg-s-ob" ${s&&s.openBook?'checked':''}>
-      <label for="mg-s-ob">Weniger Lernaufwand nötig (z.B. Open Book / Formelsammlung erlaubt)</label>
+      <label for="mg-s-ob">📖 Prüfung ist Open Book (nur Anzeige, kein direkter Einfluss auf die Priorität)</label>
+    </div>
+    <div class="mg-check-row">
+      <input type="checkbox" id="mg-s-loweffort" ${s&&needsLessEffort(s)?'checked':''}>
+      <label for="mg-s-loweffort">Weniger Lernaufwand nötig</label>
     </div>
     <div class="mg-check-row">
       <input type="checkbox" id="mg-s-nomem" ${s&&needsNoMemorization(s)?'checked':''}>
@@ -2298,12 +2309,13 @@ function mgSaveSubject(id){
   const examDate=c.querySelector('#mg-s-date').value;
   if(!examDate){ alert('Bitte ein Prüfungsdatum wählen.'); return; }
   const openBook=c.querySelector('#mg-s-ob').checked;
+  const lowEffort=c.querySelector('#mg-s-loweffort').checked;
   const noMemorize=c.querySelector('#mg-s-nomem').checked;
   if(id){
-    Object.assign(S_MAP[id],{name,short,examDate,openBook,noMemorize});
+    Object.assign(S_MAP[id],{name,short,examDate,openBook,lowEffort,noMemorize});
   } else {
     const pal=PALETTE[SUBJECTS.length%PALETTE.length];
-    SUBJECTS.push({id:genId('s'),name,short,examDate,openBook,noMemorize,...pal});
+    SUBJECTS.push({id:genId('s'),name,short,examDate,openBook,lowEffort,noMemorize,...pal});
   }
   saveSubjects();
   mgResetForms();
