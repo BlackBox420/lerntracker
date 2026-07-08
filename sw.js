@@ -1,4 +1,4 @@
-const CACHE = 'lernplan-v15';
+const CACHE = 'lernplan-v16';
 const SHELL = ['./','./index.html','./manifest.json'];
 
 self.addEventListener('install', e=>{

@@ -1507,11 +1507,23 @@ function generateSchedule(){
   const mealBlocks=Object.entries(prefs.meals)
     .filter(([,m])=>m.enabled)
     .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key]}));
-  const fixed=mergeIntervals([
+  const fixedRaw=mergeIntervals([
     ...appts.map(a=>({...a, label:'📌 '+a.label})),
     ...mealBlocks,
     ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[])
   ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
+  // renderPlanGrid() hebt Blöcke unter ~16min optisch auf eine Mindesthöhe
+  // (18px), damit Zeit+Label lesbar bleiben — ohne eine entsprechende
+  // Mindest-DAUER hier würde so ein Block über sein tatsächliches Ende hinaus
+  // ins nächste Element hineinragen (kurze Termine/Karteikarten-Fenster waren
+  // zeitlich korrekt, aber optisch zu kurz platziert — Ursache der
+  // überlappenden Blöcke). Deckelt die Verlängerung auf den Start des
+  // nächsten Blocks, damit daraus kein neuer echter Überlapp entsteht.
+  const MIN_BLOCK_DUR=16;
+  const fixed=fixedRaw.map((iv,i)=>{
+    const cap=i+1<fixedRaw.length ? fixedRaw[i+1].start : prefs.end;
+    return {...iv, end:Math.min(Math.max(iv.end, iv.start+MIN_BLOCK_DUR), cap)};
+  });
 
   const bySubj={};
   TOPICS.forEach(t=>{
@@ -1537,7 +1549,11 @@ function generateSchedule(){
     while(cur<end-14){
       if(studySince>=90){
         const brk=Math.min(20,end-cur);
-        if(brk<10) break;
+        // Mindestens 16min (siehe MIN_BLOCK_DUR oben): eine kürzere Pause würde
+        // im Kalenderraster optisch auf 18px Mindesthöhe gehoben und dadurch
+        // ins direkt anschliessende Element hineinragen. Ein zu kurzes Restfenster
+        // bleibt lieber ganz ungenutzt, als einen überlappenden Mini-Block zu zeigen.
+        if(brk<16) break;
         entries.push({type:'break',emoji:'☕',label:'Pause',dur:brk,time:cur});
         cur+=brk; studySince=0; continue;
       }
