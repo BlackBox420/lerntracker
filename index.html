@@ -118,6 +118,14 @@ input,button{font-family:inherit;font-size:inherit}
 .learn-meta{font-size:10px;color:rgba(255,255,255,.4);margin-top:2px}
 .learn-score{font-size:14px;font-weight:700;flex-shrink:0}
 
+/* "🎯 Fokus jetzt" — ein einzelner, prominenterer Vorschlag statt einer Top-3-
+   Liste (siehe renderDayCard()/focusReason()), damit man beim Öffnen einen
+   klaren nächsten Schritt sieht statt gleich mehrerer konkurrierender Optionen. */
+.focus-card{border:1.5px solid;border-radius:10px;padding:12px 14px;background:rgba(255,255,255,.04)}
+.focus-top{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.focus-name{font-size:15px;font-weight:700;color:#fff;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.focus-reason{font-size:11px;color:rgba(255,255,255,.6)}
+
 /* Filter */
 .filter-bar{display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;scrollbar-width:none}
 .filter-bar::-webkit-scrollbar{display:none}
@@ -906,6 +914,23 @@ function subjectReadiness(subjId){
 function readinessColor(pct){
   return pct>=80?'#34c759':pct>=50?'#ff9500':'#ff3b30';
 }
+// Kurzer, einzeiliger Grund für den "🎯 Fokus jetzt"-Vorschlag in renderDayCard()
+// — bewusst nur EIN dominanter Grund statt eines vollständigen Mehrfach-Grund-
+// Arrays (wie es lerntracker-general für die aufgeklappte Themenzeile hat):
+// die Fokus-Karte soll genau einen nächsten Schritt zeigen, keine Analyse.
+// Reihenfolge nach Dringlichkeit, dann nach Lücke/Schwierigkeit.
+function focusReason(t){
+  const s=S_MAP[t.subj];
+  const days=daysUntil(s.examDate);
+  const pct=assessedPct(t, getPct(t.id));
+  const pressure=subjectPressure(t.subj);
+  if(pressure>=0.7) return 'Pensum-Druck: die Zeit bis zur Prüfung wird knapp';
+  if(Math.ceil(days)<=14) return `Prüfung in ${Math.ceil(days)} Tagen`;
+  if(pct<20) return `Noch ${Math.round(100-pct)}% offen — guter Einstieg`;
+  if(t.w>=4 && (t.d||3)>=4) return 'Hohe Wichtigkeit + Schwierigkeit';
+  if(pct<80) return `Noch ${Math.round(100-pct)}% offen`;
+  return 'Höchste Priorität gerade';
+}
 // Kleiner SVG-Fortschrittsring (Donut) für die Bereitschafts-Anzeige.
 // rotate(-90deg) lässt den Ring bei 12 statt bei 3 Uhr beginnen.
 function progressRing(pct, color, size){
@@ -1150,12 +1175,16 @@ function renderDayCard(){
   logReviewsDueSnapshot(reviewItems.length);
   logSubjSnapshotOnce();
 
-  // Lern-Priorität: noch nicht auf Review-Niveau oder ungestartet
+  // Lern-Priorität: noch nicht auf Review-Niveau oder ungestartet. Bewusst nur
+  // EIN Vorschlag (nicht mehr Top-3) — die Fokus-Karte soll den nächsten
+  // kleinen Schritt zeigen statt gleich mehrere konkurrierende Optionen
+  // nebeneinanderzustellen. Die vollständige Liste bleibt unverändert in der
+  // Prioritätsliste weiter unten sicht-/aufklappbar.
   const learnItems = TOPICS
     .map(t=>({...t,score:calcScore(t)}))
     .filter(t=>!isReviewTopic(t)&&t.score>0.05)
     .sort((a,b)=>b.score-a.score)
-    .slice(0,3);
+    .slice(0,1);
 
   const reviewHtml = reviewItems.length===0
     ? `<div class="all-done-msg">Keine Themen zur Wiederholung</div>`
@@ -1180,18 +1209,17 @@ function renderDayCard(){
 
   const learnHtml = learnItems.length===0
     ? `<div class="all-done-msg">Alle Themen auf Kurs 🎉</div>`
-    : learnItems.map((t,i)=>{
+    : (()=>{
+        const t=learnItems[0];
         const s=S_MAP[t.subj];
-        const col=scoreCol(t.score);
-        return`<div class="learn-item">
-          <div class="learn-rank">#${i+1}</div>
-          <div class="learn-body">
-            <div class="learn-name">${esc(t.name)}</div>
-            <div class="learn-meta">${esc(s.short)} · ${esc(t.grp)} · ${Math.ceil(daysUntil(s.examDate))}d</div>
+        return`<div class="focus-card" style="border-color:${s.color}">
+          <div class="focus-top">
+            <span style="background:${s.bg};color:${s.tx};padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;flex-shrink:0">${esc(s.short)}</span>
+            <span class="focus-name">${esc(t.name)}</span>
           </div>
-          <div class="learn-score" style="color:${col}">${t.score.toFixed(1)}</div>
+          <div class="focus-reason">${focusReason(t)}</div>
         </div>`;
-      }).join('');
+      })();
 
   // Streak/Wochen-Rückblick: bewusst nicht ans App-Öffnen gekoppelt, sondern an
   // tatsächlich erledigte Wiederholungen (siehe getStreak()) — ein Tag ohne
@@ -1208,7 +1236,7 @@ function renderDayCard(){
     <div class="day-section-title">🔄 Heute wiederholen</div>
     <div class="review-chips">${reviewHtml}</div>
     <div class="day-divider"></div>
-    <div class="day-section-title">📚 Neu lernen</div>
+    <div class="day-section-title">🎯 Fokus jetzt</div>
     ${learnHtml}
   </div>`;
 }
