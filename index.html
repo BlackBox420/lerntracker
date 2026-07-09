@@ -697,7 +697,15 @@ function purgeSubjectData(sid){
   saveP(false); saveR(false); saveHL(false); saveCP(false); saveM(false); saveCardsets();
 }
 
-function todayStr(){ return new Date().toISOString().split('T')[0] }
+// 'YYYY-MM-DD' aus den LOKALEN Datumsanteilen eines Date-Objekts. Bewusst nicht
+// toISOString() (das liefert das UTC-Datum): in jeder Zeitzone mit positivem
+// UTC-Offset (u.a. Mitteleuropa/CET/CEST) liegt lokale Mitternacht 1-2h VOR
+// UTC-Mitternacht, wodurch toISOString() dort systematisch das FALSCHE Datum
+// liefert.
+function localDateStr(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function todayStr(){ return localDateStr(new Date()); }
 function getPct(id){ return (progress[id]||{}).pct||0 }
 function getHrs(id){ return (progress[id]||{}).hrs||'' }
 function getMotiv(sid){ return motivation[sid]||5 }
@@ -969,7 +977,7 @@ let HISTORY = JSON.parse(localStorage.getItem('lt-history')||'{}');
 
 function saveHistory(sync=true){
   const cutoff=new Date(); cutoff.setDate(cutoff.getDate()-HISTORY_MAX_DAYS);
-  const cutoffStr=cutoff.toISOString().split('T')[0];
+  const cutoffStr=localDateStr(cutoff);
   Object.keys(HISTORY).forEach(k=>{ if(k<cutoffStr) delete HISTORY[k]; });
   localStorage.setItem('lt-history', JSON.stringify(HISTORY));
   if(sync) debouncedPush();
@@ -1020,7 +1028,7 @@ function getStreak(){
   let streak=0;
   const d=new Date(); d.setDate(d.getDate()-1);
   while(true){
-    const key=d.toISOString().split('T')[0];
+    const key=localDateStr(d);
     if(key<firstKey) break;
     const e=HISTORY[key];
     if(!e || e.reviewsDue===0 || e.reviewsDone.length>=e.reviewsDue){
@@ -1035,7 +1043,7 @@ function getWeeklyRecap(){
   let due=0, done=0;
   for(let i=0;i<7;i++){
     const d=new Date(); d.setDate(d.getDate()-i);
-    const e=HISTORY[d.toISOString().split('T')[0]];
+    const e=HISTORY[localDateStr(d)];
     if(!e) continue;
     due+=e.reviewsDue;
     done+=Math.min(e.reviewsDue, e.reviewsDone.length);
@@ -1051,7 +1059,7 @@ function getSubjTrend(subjId){
   const todayPct=Math.round(topics.reduce((a,t)=>a+getPct(t.id),0)/topics.length);
   for(let i=7;i<=13;i++){
     const d=new Date(); d.setDate(d.getDate()-i);
-    const e=HISTORY[d.toISOString().split('T')[0]];
+    const e=HISTORY[localDateStr(d)];
     if(e && e.subjPct && e.subjPct[subjId]!==undefined) return todayPct-e.subjPct[subjId];
   }
   return null;
@@ -1063,7 +1071,7 @@ function getSubjHistorySeries(subjId, days){
   const out=[];
   for(let i=days-1;i>=0;i--){
     const d=new Date(); d.setDate(d.getDate()-i);
-    const key=d.toISOString().split('T')[0];
+    const key=localDateStr(d);
     const e=HISTORY[key];
     if(e && e.subjPct && e.subjPct[subjId]!==undefined) out.push({date:key, pct:e.subjPct[subjId]});
   }
@@ -1524,7 +1532,7 @@ function pauseTopic(id){
   const raw=prompt('Kurzer Grund (optional), z.B. "kein neues Material"');
   if(raw===null) return; // abgebrochen
   const until=new Date(); until.setDate(until.getDate()+PAUSE_DAYS);
-  t.pausedUntil=until.toISOString().split('T')[0];
+  t.pausedUntil=localDateStr(until);
   t.pauseReason=raw.trim();
   saveTopics();
   renderDayCard();
@@ -2837,11 +2845,15 @@ function mgDeleteSubject(id){
   const s=S_MAP[id];
   const n=TOPICS.filter(t=>t.subj===id).length;
   if(!confirm(`"${s.name}" wirklich löschen?${n?` Alle ${n} zugehörigen Themen werden ebenfalls gelöscht.`:''}`)) return;
+  // purgeSubjectData() muss VOR dem Leeren von TOPICS laufen — es leitet die
+  // zum Fach gehörenden Themen-IDs selbst aus TOPICS ab, fände sonst keine mehr
+  // und würde progress/lastReview/halfLife/cardProgress dieser Themen als
+  // Datenleiche zurücklassen (war ein echter Bug bis 2026-07-09).
+  purgeSubjectData(id);
   TOPICS=TOPICS.filter(t=>t.subj!==id);
   saveTopics(false);
   SUBJECTS=SUBJECTS.filter(s2=>s2.id!==id);
   saveSubjects();
-  purgeSubjectData(id);
   mgResetForms();
   refreshAll();
 }
