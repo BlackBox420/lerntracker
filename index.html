@@ -934,11 +934,12 @@ function fillRange(el,col){
 }
 
 // ── Bereitschafts-Score pro Fach ─────────────────────────────────────────────
-// Rein anzeigender Zusatz-Kennwert für die Statistik — KEIN Einfluss auf
-// calcScore()/generateSchedule() oder irgendeine Sortierung. Fasst Fortschritt,
-// Pensum-Druck und (falls vorhanden) Wiederholungs-Frische zu einer einzigen
-// 0-100-Zahl zusammen. Fächer ohne Review-Themen (noch nichts über 60%, oder
-// komplett Open-Book) werden dafür nicht bestraft — avgRetention bleibt neutral.
+// Anzeige-Kennwert für die Statistik, der zusätzlich in examSimScore() (siehe
+// unten) einfließt — sonst kein Einfluss auf calcScore() oder die normale
+// Themen-Sortierung. Fasst Fortschritt, Pensum-Druck und (falls vorhanden)
+// Wiederholungs-Frische zu einer einzigen 0-100-Zahl zusammen. Fächer ohne
+// Review-Themen (noch nichts über 60%, oder komplett Open-Book) werden dafür
+// nicht bestraft — avgRetention bleibt neutral.
 function subjectReadiness(subjId){
   const topics=TOPICS.filter(t=>t.subj===subjId);
   if(topics.length===0) return null;
@@ -950,6 +951,31 @@ function subjectReadiness(subjId){
     : 1;
   const pct=Math.round(100*(0.5*avgPct/100 + 0.3*(1-pressure) + 0.2*avgRetention));
   return Math.max(0,Math.min(100,pct));
+}
+
+// Wie dringend eine offene Prüfungssimulation gerade ist — rotiert damit als
+// eigene "virtuelle Themen-Zeile" ins Fach ein (siehe buildStudyChunks()) und
+// konkurriert direkt mit echten Themen um Zeit, statt wie zuvor immer als
+// fixer Block an den Tagesanfang gesetzt zu werden. Drei Faktoren:
+//  - examUrgency: steigt erst in den letzten ~30 Tagen vor der Prüfung an
+//    (enger als calcScore()s 75-Tage-dayUrgency) — Probeklausuren sind eine
+//    Aktivität für die Schlussphase, nicht die ganze Vorbereitungszeit.
+//  - availabilityBoost: mehrere gleichzeitig offene Simulationen desselben
+//    Fachs sollen sich nicht alle bis zum Schluss stauen, daher ein kleiner
+//    Aufschlag pro zusätzlicher offener Simulation.
+//  - readinessFactor: je höher subjectReadiness(), desto eher lohnt sich JETZT
+//    eine Probeklausur als Stresstest (Nutzer-Entscheidung 2026-07-09) — bei
+//    niedriger Bereitschaft eher zurückhaltend (Kernstoff geht vor), aber nie
+//    ganz auf 0 gedämpft.
+function examSimScore(sim){
+  const s=S_MAP[sim.subj];
+  const days=daysUntil(s.examDate);
+  const examUrgency=Math.max(0,Math.min(1,1-days/30));
+  const pendingCount=EXAMSIMS.filter(e=>e.subj===sim.subj && !e.done).length;
+  const availabilityBoost=1+0.2*Math.max(0,pendingCount-1);
+  const readiness=subjectReadiness(sim.subj);
+  const readinessFactor=readiness===null ? 0.85 : 0.5+(readiness/100)*0.9;
+  return 2.2*examUrgency*availabilityBoost*readinessFactor;
 }
 // Dieselbe Ampel-Schwelle wie die Fortschrittsbalken in der Statistik.
 function readinessColor(pct){
@@ -2005,6 +2031,22 @@ function buildStudyChunks(){
     if(score<=0.05 || isReviewTopic(t)) return;
     (bySubj[t.subj]=bySubj[t.subj]||[]).push({...t,score,remaining:estimateDur(t)});
   });
+  // Offene Prüfungssimulationen (siehe examSimScore()) rotieren als eigene
+  // "virtuelle Themen" in dieselbe Fach-Warteschlange ein — dadurch konkurrieren
+  // sie direkt mit echtem Lernstoff um Zeit (z.B. statt 2h NMR lernen 120min
+  // Probeklausur, wenn ihr Score gerade höher liegt), statt wie zuvor immer als
+  // fixer Block ganz am Tagesanfang zu stehen. isExamSim markiert sie für
+  // planToText() (kein sinnloses "0% erledigt" für ein Thema, das es gar nicht
+  // gibt), renderPlanGrid() braucht keine Sonderbehandlung (subj/name/dur
+  // reichen für Farbe+Label).
+  openPendingExamSims().forEach(e=>{
+    const score=examSimScore(e);
+    if(score<=0.05) return;
+    (bySubj[e.subj]=bySubj[e.subj]||[]).push({
+      id:e.id, subj:e.subj, name:'🎓 '+e.title, isExamSim:true,
+      score, remaining:e.durationMin
+    });
+  });
   Object.values(bySubj).forEach(a=>a.sort((x,y)=>y.score-x.score));
   let subjOrder=Object.keys(bySubj).sort((a,b)=>(bySubj[b][0]?.score||0)-(bySubj[a][0]?.score||0));
 
@@ -2151,26 +2193,14 @@ function buildDayFrame(dayOffset){
   const mealBlocks=Object.entries(prefs.meals)
     .filter(([,m])=>m.enabled)
     .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key]}));
-  // Offene Prüfungssimulationen (siehe openPendingExamSims()) reservieren direkt
-  // nach der Karteikarten-Zeit hintereinander je einen eigenen Zeitabschnitt —
-  // mehrere gleichzeitig offene, auch über verschiedene Fächer hinweg, addieren
-  // sich so zu einer zusammenhängenden Gesamtdauer. mergeIntervals() verschmilzt
-  // direkt aneinandergrenzende Blöcke zu einem einzigen Kalender-Eintrag mit
-  // zusammengesetztem Label (z.B. "🎓 OC: HS23 + 🎓 BC: Musterklausur") — exakt
-  // dasselbe Verhalten wie bei Vorlesung direkt gefolgt von Übung, siehe
-  // mergeIntervals() weiter oben. Titel und Gesamtdauer bleiben dabei erhalten,
-  // nur optisch wird daraus ein Block statt mehrerer.
-  let examCursor=prefs.start+cardMin;
-  const examBlocks=dayOffset===0 ? openPendingExamSims().map(e=>{
-    const blk={start:examCursor, end:examCursor+e.durationMin, label:`🎓 ${S_MAP[e.subj].short}: ${e.title}`};
-    examCursor+=e.durationMin;
-    return blk;
-  }) : [];
+  // Prüfungssimulationen sind hier bewusst KEIN fixer Block mehr — sie rotieren
+  // seit examSimScore() als virtuelle Themen mit echtem Lernstoff um Zeit
+  // (siehe buildStudyChunks()), landen also je nach Priorität irgendwo in den
+  // freien Fenstern unten, nicht zwangsläufig ganz am Tagesanfang.
   const fixedRaw=mergeIntervals([
     ...appts.map(a=>({...a, label:'📌 '+a.label})),
     ...mealBlocks,
-    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[]),
-    ...examBlocks
+    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[])
   ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
   // renderPlanGrid() hebt Blöcke unter ~16min optisch auf eine Mindesthöhe
   // (18px), damit Zeit+Label lesbar bleiben — ohne eine entsprechende
@@ -2330,7 +2360,11 @@ function planToText(){
   for(const e of _planEntries){
     if(e.type==='topic'){
       const s=S_MAP[e.t.subj];
-      lines.push(`${fmtTime(e.time)}  [${s.short}] ${e.t.name} — ${e.t.dur}min (${getPct(e.t.id)}% erledigt)`);
+      // Prüfungssimulationen (isExamSim, siehe buildStudyChunks()) haben keinen
+      // Fortschritts-%-Wert wie echte Themen — getPct() für ihre ID würde
+      // ansonsten irreführend "0% erledigt" anzeigen.
+      const suffix=e.t.isExamSim ? '' : ` (${getPct(e.t.id)}% erledigt)`;
+      lines.push(`${fmtTime(e.time)}  [${s.short}] ${e.t.name} — ${e.t.dur}min${suffix}`);
     } else if(e.type==='break'){
       lines.push(`${fmtTime(e.time)}  ${e.emoji} ${e.label} (${e.dur}min)`);
     } else if(e.type==='appt'){
