@@ -1815,6 +1815,18 @@ function generateSchedule(){
     return {...iv, end:Math.min(Math.max(iv.end, iv.start+MIN_BLOCK_DUR), cap)};
   });
 
+  // ── Phase 1: Zuteilung ───────────────────────────────────────────────────
+  // WELCHE Themen in WELCHER Reihenfolge WIE LANGE drankommen, wird hier
+  // vollständig unabhängig von Uhrzeiten/Fenstergrenzen entschieden — die
+  // frühere Version hat diese Entscheidung mit der Platzierung in die freien
+  // Tages-Fenster vermischt (fillWindow() hat live rotiert, je nachdem wie viel
+  // Zeit gerade noch in einem Fenster übrig war). Dadurch konnte eine winzige
+  // Änderung an Start-/Ende-Zeit oder einer Mahlzeit die Rundung in einem
+  // frühen Fenster kippen ("Thema wird JETZT fertig" vs. "erst im nächsten
+  // Fenster"), was die Rotations-Reihenfolge für den ganzen Resttag verschob —
+  // ein klassischer Schmetterlingseffekt einer zustandsbehafteten Simulation.
+  // Hier hängt die Reihenfolge nur noch von Scores/geschätzten Dauern ab, gar
+  // nicht von der Uhr, und ist damit robust gegen solche kleinen Änderungen.
   const bySubj={};
   TOPICS.forEach(t=>{
     const score=calcScore(t);
@@ -1824,19 +1836,47 @@ function generateSchedule(){
   Object.values(bySubj).forEach(a=>a.sort((x,y)=>y.score-x.score));
   let subjOrder=Object.keys(bySubj).sort((a,b)=>(bySubj[b][0]?.score||0)-(bySubj[a][0]?.score||0));
 
+  // Round-Robin zwischen Fächern bleibt erhalten (sonst würde ein einzelnes
+  // Fach leicht "am Stück" den ganzen Tag füllen) — nur eben als reine
+  // Minuten-Buchhaltung statt an Fenstergrenzen gekoppelt: jedes Fach bekommt
+  // am Stück höchstens SESSION_LEN Minuten seines wichtigsten Themas, dann
+  // rückt turnusmäßig das nächste Fach nach (bzw. dasselbe Thema geht bei der
+  // übernächsten Runde einfach weiter, falls es noch nicht fertig ist).
+  const SESSION_LEN=90;
+  const chunks=[]; // stabile, uhrzeit-unabhängige Reihenfolge: {t, dur}
+  let stintLeft=SESSION_LEN;
+  while(subjOrder.length){
+    const primary=subjOrder[0];
+    const list=bySubj[primary];
+    if(!list || !list.length){ subjOrder.shift(); stintLeft=SESSION_LEN; continue; }
+    const t=list[0];
+    const dur=Math.min(t.remaining, stintLeft);
+    chunks.push({t, dur});
+    t.remaining-=dur;
+    stintLeft-=dur;
+    if(t.remaining<=0.01) list.shift();
+    if(stintLeft<=0.01){
+      if(list.length){ subjOrder.shift(); subjOrder.push(primary); }
+      stintLeft=SESSION_LEN;
+    }
+  }
+
   const reviewQ = TOPICS.map(t=>({...t,score:calcScore(t)}))
     .filter(t=>isReviewTopic(t)&&!reviewedToday(t.id)&&t.score>0.05)
     .sort((a,b)=>b.score-a.score);
 
+  // ── Phase 2: Platzierung ─────────────────────────────────────────────────
+  // Die in Phase 1 fertig entschiedene Reihenfolge wird nur noch der Reihe
+  // nach in die freien Fenster des Tages einsetzt. Passt ein Chunk nicht ganz
+  // ins aktuelle Fenster, wird er an der Fenstergrenze aufgeteilt und im
+  // nächsten Fenster fortgesetzt (derselbe Chunk, keine neue Entscheidung) —
+  // die Reihenfolge selbst steht schon fest und kann hier nicht mehr kippen.
   const entries=[];
   let cur=prefs.start, studySince=0;
+  let chunkIdx=0, chunkOffset=0;
 
-  // Ein Block (Fenster) gehört primär einem Fach — nur wenn dieses Fach vorzeitig
-  // leer ist, füllt ausnahmsweise das nächste Fach den Rest des Blocks auf.
   function fillWindow(end){
-    if(subjOrder.length===0) return;
-    const primary=subjOrder[0];
-    while(cur<end-14){
+    while(cur<end-14 && chunkIdx<chunks.length){
       if(studySince>=90){
         const brk=Math.min(20,end-cur);
         // Mindestens 16min (siehe MIN_BLOCK_DUR oben): eine kürzere Pause würde
@@ -1847,25 +1887,15 @@ function generateSchedule(){
         entries.push({type:'break',emoji:'☕',label:'Pause',dur:brk,time:cur});
         cur+=brk; studySince=0; continue;
       }
-      if(subjOrder.length===0) break;
-      const subj=subjOrder[0];
-      const list=bySubj[subj];
-      if(!list||!list.length){ subjOrder.shift(); continue; }
-      const t=list[0];
+      const chunk=chunks[chunkIdx];
+      const remainInChunk=chunk.dur-chunkOffset;
       const avail=end-cur;
       if(avail<20) break;
-      const dur=Math.min(t.remaining, Math.max(20,Math.floor(avail/15)*15));
-      entries.push({type:'topic',t:{...t,dur},time:cur});
-      t.remaining-=dur;
-      if(t.remaining<=0) list.shift();
+      const dur=Math.min(remainInChunk, Math.max(20,Math.floor(avail/15)*15));
+      entries.push({type:'topic',t:{...chunk.t,dur},time:cur});
+      chunkOffset+=dur;
       cur+=dur; studySince+=dur;
-    }
-    // Leitfach dieses Blocks noch nicht fertig (Zeit reichte nicht) -> für den
-    // nächsten Block zurückstellen, damit dort ein anderes Fach drankommt.
-    const idx=subjOrder.indexOf(primary);
-    if(idx!==-1 && bySubj[primary] && bySubj[primary].length){
-      subjOrder.splice(idx,1);
-      subjOrder.push(primary);
+      if(chunkOffset>=chunk.dur-0.01){ chunkIdx++; chunkOffset=0; }
     }
   }
 
