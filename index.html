@@ -2292,7 +2292,49 @@ function generateSchedule(dayOffset){
     entries=placed.entries;
     state=placed.state;
   }
-  return entries;
+  // Nur für "heute" (dayOffset===0 als tatsächlich angefordertem Tag, nicht
+  // als Zwischenschritt beim Berechnen von "morgen") wird die schon
+  // verstrichene Vergangenheit eingefroren — siehe freezeElapsedEntries().
+  return dayOffset===0 ? freezeElapsedEntries(entries) : entries;
+}
+
+// ── Vergangenheit einfrieren ─────────────────────────────────────────────────
+// lt-schedule-snapshot: {<Datum>: [entries...]} — hält fest, was für "heute"
+// bereits einmal berechnet/angezeigt wurde. Bei jedem Rendern wird der Teil
+// des LETZTEN Schnappschusses, der schon vor "jetzt" liegt, unverändert
+// übernommen (nur aus optischen Gründen weiter sichtbar, Nutzer-Feedback
+// 2026-07-09) und mit der frisch berechneten Zukunft (siehe
+// effectiveDayPrefs()/buildDayFrame(), die ab "jetzt" statt ab dem
+// gespeicherten Beginn rechnet) zu einem neuen Schnappschuss verschmolzen,
+// der ab dann selbst wieder als "eingefrorene Vergangenheit" gilt — ein
+// Ratsche-Mechanismus, kein einmaliges "Commit" des ganzen Tages. Ganz am
+// Anfang eines Tages (noch nie angeschaut) ist die "Vergangenheit" einfach
+// leer, es gibt ja noch nichts einzufrieren.
+function getScheduleSnapshot(dateStr){
+  const all=JSON.parse(localStorage.getItem('lt-schedule-snapshot')||'{}');
+  return all[dateStr]||null;
+}
+function saveScheduleSnapshot(dateStr, entries){
+  const all=JSON.parse(localStorage.getItem('lt-schedule-snapshot')||'{}');
+  all[dateStr]=entries;
+  const keys=Object.keys(all).sort();
+  while(keys.length>7){ delete all[keys.shift()]; }
+  localStorage.setItem('lt-schedule-snapshot', JSON.stringify(all));
+}
+function freezeElapsedEntries(freshEntries){
+  const dateStr=todayStr();
+  const nowMin=new Date().getHours()*60+new Date().getMinutes();
+  const prevSnapshot=getScheduleSnapshot(dateStr)||[];
+  // 'end' nie aus dem alten Schnappschuss übernehmen — freshEntries bringt
+  // ihre eigene, aktuelle "Feierabend"-Markierung am Ende schon mit.
+  const frozenPast=prevSnapshot.filter(e=>{
+    if(e.type==='end') return false;
+    const dur = e.type==='topic' ? e.t.dur : e.dur;
+    return (e.time+dur)<=nowMin;
+  });
+  const combined=[...frozenPast, ...freshEntries];
+  saveScheduleSnapshot(dateStr, combined);
+  return combined;
 }
 
 let _planEntries=[];
@@ -2323,12 +2365,27 @@ function renderPlanGrid(entries, prefs){
     ? `<div class="grid-now-line" data-grid-start="${gridStart}" data-grid-end="${gridEnd}" style="top:${(nowMin-gridStart)*PXMIN}px"><div class="grid-now-dot"></div></div>` : '';
 
   let blocksHtml='';
-  for(const e of entries){
+  for(let i=0;i<entries.length;i++){
+    const e=entries[i];
     if(e.type==='end') continue;
     const dur = e.type==='topic' ? e.t.dur : e.dur;
     if(!dur) continue;
     const top=(e.time-gridStart)*PXMIN;
-    const height=Math.max(18,dur*PXMIN);
+    // Mindesthöhe 18px, damit Zeit+Label bei sehr kurzen Blöcken (<~16min)
+    // noch lesbar bleiben — darf aber NIE über den Start des nächsten
+    // Eintrags hinausreichen (der praktisch immer direkt anschliesst, ohne
+    // echte Lücke), sonst würde ein kurzer Block optisch in den nächsten
+    // hineinragen, obwohl beide Zeiten korrekt und überlappungsfrei sind
+    // (Nutzer-Screenshot 2026-07-09: genau dieser Effekt bei aufeinander-
+    // folgenden kurzen Blöcken). Nur wenn zwischen diesem und dem nächsten
+    // Eintrag tatsächlich eine Lücke besteht (z.B. ein <20min-Restfenster vor
+    // einem Termin, das fillWindow() bewusst frei lässt), darf die
+    // Mindesthöhe diese Lücke ausfüllen. entries[i+1] ist notfalls die
+    // 'end'-Markierung, die ebenfalls ein gültiges .time trägt.
+    const natural=dur*PXMIN;
+    const nextTime=i+1<entries.length ? entries[i+1].time : gridEnd;
+    const maxAllowed=Math.max(natural,(nextTime-e.time)*PXMIN);
+    const height=Math.min(Math.max(18,natural), maxAllowed);
     let bg,tx,label,cls='';
     if(e.type==='topic'){
       const s=S_MAP[e.t.subj]; bg=s.bg; tx=s.tx; label=esc(e.t.name);
@@ -2407,10 +2464,14 @@ function renderPlan(){
     ' · ~'+Math.round(totalStudy/60*10)/10+'h Lernzeit'+(isIdeal?' (ideal, ohne Termine)':'');
 
   // "Ideal" hat kein festes Tagesfenster — die Rasterhöhe richtet sich nach
-  // dem tatsächlichen Ende der Zuteilung, mindestens aber eine Stunde.
+  // dem tatsächlichen Ende der Zuteilung, mindestens aber eine Stunde. Für
+  // "Angepasst" bewusst der RAW-Beginn (nicht effectiveDayPrefs()' auf "jetzt"
+  // gekapptes Fenster) — sonst hätten eingefrorene Vergangenheits-Blöcke
+  // (siehe freezeElapsedEntries()) eine negative top-Position und würden aus
+  // dem Kalenderraster herausragen statt an ihrer echten Uhrzeit zu stehen.
   const gridPrefs=isIdeal
     ? {start:420, end:Math.max((entries[entries.length-1]||{}).time||420, 480)}
-    : effectiveDayPrefs(planDayOffset);
+    : getDayPrefs(currentPlanDateStr());
   document.getElementById('plan-content').innerHTML = renderPlanGrid(entries, gridPrefs);
 }
 
