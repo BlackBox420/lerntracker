@@ -2519,9 +2519,9 @@ function importData(){
 // mgState hält, welches Formular gerade offen ist (es ist immer höchstens eines
 // gleichzeitig offen: entweder "neues Fach", "Fach X bearbeiten", "neues Thema
 // zu Fach Y" oder "Thema Z bearbeiten").
-let mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null };
+let mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null, editCardsetFor:null };
 
-function mgResetForms(){ mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null }; }
+function mgResetForms(){ mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null, editCardsetFor:null }; }
 
 // Liefert den Container, aus dem gerade tatsächlich gelesen/in den geschrieben
 // werden soll (siehe Erklärung oben): das Verwalten-Modal, falls es gerade offen
@@ -2685,12 +2685,13 @@ function mgTopicBlock(t){
 // Speichern nicht als Zuordnung übernommen. Gesamtzahl ergibt sich als Summe der
 // Zuordnungen, es gibt bewusst kein separates "Gesamt"-Feld (sonst könnten beide
 // Angaben widersprüchlich sein).
-function mgCardsetForm(subjId){
+function mgCardsetForm(subjId, cs){
   const topics=TOPICS.filter(t=>t.subj===subjId);
+  const allocFor=tid=>{ const a=cs&&cs.allocations.find(x=>x.topic===tid); return a?a.total:''; };
   return `<div class="mg-form">
     <div class="mg-field">
       <label>Neue Karten pro Tag</label>
-      <input type="number" id="mg-cs-newperday" min="1" value="20" placeholder="z.B. 20">
+      <input type="number" id="mg-cs-newperday" min="1" value="${cs?cs.newPerDay:20}" placeholder="z.B. 20">
     </div>
     <div class="mg-field">
       <label>Karten pro Thema</label>
@@ -2698,20 +2699,22 @@ function mgCardsetForm(subjId){
         ? `<div style="font-size:11px;color:var(--txt2)">Noch keine Themen in diesem Fach angelegt.</div>`
         : topics.map(t=>`<div style="display:flex;align-items:center;gap:8px;margin-top:4px">
             <span style="flex:1;font-size:12px">${esc(t.name)}</span>
-            <input type="number" min="0" class="h-input" style="width:70px" id="mg-cs-topic-${t.id}" placeholder="0">
+            <input type="number" min="0" class="h-input" style="width:70px" id="mg-cs-topic-${t.id}" value="${allocFor(t.id)}" placeholder="0">
           </div>`).join('')}
     </div>
     <div class="mg-form-actions">
       <button class="mg-btn-cancel" onclick="mgCancel()">Abbrechen</button>
-      <button class="mg-btn-save" onclick="mgSaveCardset('${subjId}')">Speichern</button>
+      <button class="mg-btn-save" onclick="mgSaveCardset('${subjId}',${cs?`'${cs.id}'`:'null'})">Speichern</button>
     </div>
   </div>`;
 }
 
 // Eine Zeile pro bestehendem Karteikarten-Set in der Verwalten-Liste: Zusammenfassung
-// (Gesamtkarten, neue/Tag, Aufteilung auf Themen) + Löschen. Kein Bearbeiten-Modus —
-// ein Set wird bei Bedarf gelöscht und neu angelegt, das hält die Formulare einfach.
+// (Gesamtkarten, neue/Tag, Aufteilung auf Themen) + Bearbeiten/Löschen. Bei aktivem
+// Bearbeiten-Modus (mgState.editCardsetFor) wird darunter mgCardsetForm() vorbefüllt
+// eingeblendet — analog zu mgTopicBlock().
 function mgCardsetBlock(cs){
+  const editing=mgState.editCardsetFor===cs.id;
   const total=cs.allocations.reduce((sum,a)=>sum+a.total,0);
   const detail=cs.allocations.map(a=>{const t=T_MAP[a.topic];return t?`${esc(t.name)}: ${a.total}`:null;}).filter(Boolean).join(' · ');
   return `<div class="mg-topic-row">
@@ -2719,8 +2722,10 @@ function mgCardsetBlock(cs){
       <div class="mg-topic-name">🗂️ ${total} Karten · ${cs.newPerDay}/Tag neu</div>
       ${detail?`<div class="mg-topic-grp">${detail}</div>`:''}
     </div>
+    <button class="mg-icon-btn" onclick="mgOpenEditCardset('${cs.id}')">✏️</button>
     <button class="mg-icon-btn" onclick="mgDeleteCardset('${cs.id}')">🗑</button>
-  </div>`;
+  </div>
+  ${editing?mgCardsetForm(cs.subj,cs):''}`;
 }
 
 // Eine ganze Fach-Karte in der Verwalten-Liste: Fach-Kopfzeile + (falls
@@ -2784,10 +2789,11 @@ function mgOpenEditSubject(id){ mgResetForms(); mgState.editSubject=id; renderMa
 function mgOpenAddTopic(subjId){ mgResetForms(); mgState.addTopicFor=subjId; renderManage(); }
 function mgOpenEditTopic(id){ mgResetForms(); mgState.editTopic=id; renderManage(); }
 function mgOpenAddCardset(subjId){ mgResetForms(); mgState.addCardsetFor=subjId; renderManage(); }
+function mgOpenEditCardset(id){ mgResetForms(); mgState.editCardsetFor=id; renderManage(); }
 
 // Speichert das Karteikarten-Set-Formular: liest die Neue-Karten/Tag-Zahl sowie pro
 // Thema die zugeordnete Kartenzahl aus (0 oder leer = kein Bezug zu diesem Thema).
-function mgSaveCardset(subjId){
+function mgSaveCardset(subjId, id){
   const c=mgActiveContainer();
   const newPerDay=parseInt(c.querySelector('#mg-cs-newperday').value)||20;
   const topics=TOPICS.filter(t=>t.subj===subjId);
@@ -2796,7 +2802,11 @@ function mgSaveCardset(subjId){
     return {topic:t.id, total:parseInt(el&&el.value)||0};
   }).filter(a=>a.total>0);
   if(allocations.length===0){ alert('Bitte mindestens einem Thema Karten zuordnen.'); return; }
-  CARDSETS.push({id:genId('cs'), subj:subjId, newPerDay, allocations});
+  if(id){
+    Object.assign(CARDSETS.find(cs=>cs.id===id),{newPerDay,allocations});
+  } else {
+    CARDSETS.push({id:genId('cs'), subj:subjId, newPerDay, allocations});
+  }
   saveCardsets();
   mgResetForms();
   refreshAll();
