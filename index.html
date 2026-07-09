@@ -399,6 +399,7 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
       </div>
       <div id="meals-section" style="margin-bottom:14px"></div>
       <div id="appt-section" style="margin-bottom:14px"></div>
+      <div id="examsim-section" style="margin-bottom:14px"></div>
     </div>
     <div id="plan-content"></div>
     <button class="copy-btn" id="copy-btn" onclick="copyPlan()">📋 Als Text kopieren</button>
@@ -1828,6 +1829,50 @@ function renderApptSection(){
   `;
 }
 
+// Zeichnet den Prüfungssimulations-Bereich im Tagesplan-Modal: offene
+// Simulationen als Chips (✓ zum Abschließen samt Punktzahl-Abfrage, ✕ zum
+// Löschen) + ein Kurzformular zum direkten Anlegen (Fach, Titel, Dauer) —
+// Gegenstück zu renderApptSection(), damit eine spontane "heute mache ich
+// eine PC III Probeklausur"-Entscheidung nicht erst den Umweg über
+// "Verwalten" nehmen muss. Neu angelegte reservieren sofort einen eigenen
+// Block im Kalenderraster darunter (siehe generateSchedule()). Fach-Auswahl
+// nur nötig, wenn mehrere Fächer existieren (sonst automatisch das einzige).
+function renderExamSimSection(){
+  const el=document.getElementById('examsim-section');
+  if(!el) return;
+  const open=openPendingExamSims();
+  el.innerHTML=`
+    ${open.map(e=>{
+      const s=S_MAP[e.subj];
+      return `<span class="appt-chip">🎓 ${esc(s.short)}: ${esc(e.title)} (${e.durationMin}min)
+        <a href="#" onclick="toggleExamSimDone('${e.id}');return false" title="Als erledigt markieren">✓</a>
+        <a href="#" onclick="mgDeleteExamSim('${e.id}');return false">✕</a></span>`;
+    }).join('')}
+    <div class="appt-add-row">
+      <select id="examsim-subj-input" style="flex:1;padding:6px 8px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
+        ${SUBJECTS.map(s=>`<option value="${s.id}">${esc(s.short)}</option>`).join('')}
+      </select>
+      <input type="text" id="examsim-title-input" placeholder="z.B. Probeklausur">
+      <input type="number" id="examsim-duration-input" min="15" step="15" value="120" style="width:64px">
+      <button class="appt-add-btn" onclick="addExamSimQuick()">+</button>
+    </div>
+  `;
+}
+// Formular-Handler für "+" im Prüfungssimulations-Bereich des Tagesplan-Modals
+// — dieselbe Datenstruktur wie mgSaveExamSim() in "Verwalten" (EXAMSIMS-Eintrag,
+// done:false), nur ohne den Umweg über mgState/mgActiveContainer, weil hier
+// immer eine Neuanlage ist, kein Bearbeiten-Fall.
+function addExamSimQuick(){
+  const subj=document.getElementById('examsim-subj-input').value;
+  const title=(document.getElementById('examsim-title-input').value||'').trim();
+  if(!title){ alert('Bitte einen Titel eingeben.'); return; }
+  const durationMin=Math.max(15,parseInt(document.getElementById('examsim-duration-input').value)||120);
+  EXAMSIMS.push({id:genId('es'), subj, title, durationMin, done:false, scorePct:null, doneDate:null});
+  saveExamSims();
+  renderExamSimSection();
+  renderPlan();
+}
+
 // ── Tagesplan-Generierung ───────────────────────────────────────────────────────
 // Feste Termine (Sperren) und Mahlzeiten werden zuerst platziert, die freien
 // Zeitfenster dazwischen füllt eine Round-Robin-Rotation zwischen den Fächern
@@ -2275,6 +2320,7 @@ function openPlan(){
   document.getElementById('dayend-input').value = fmtTime(prefs.end);
   renderMealsSection();
   renderApptSection();
+  renderExamSimSection();
   setPlanView('adapted');
   renderQuickTimer();
   clearInterval(_quickTimerInterval);
@@ -2982,12 +3028,14 @@ function mgSaveExamSim(subjId, id){
   saveExamSims();
   mgResetForms();
   refreshAll();
+  renderExamSimSection(); renderPlan();
 }
 function mgDeleteExamSim(id){
   if(!confirm('Prüfungssimulation wirklich löschen?')) return;
   EXAMSIMS=EXAMSIMS.filter(e=>e.id!==id);
   saveExamSims();
   refreshAll();
+  renderExamSimSection(); renderPlan();
 }
 // Häkchen an einer Prüfungssimulation: beim Abschließen wird die erreichte
 // Punktzahl in % abgefragt (prompt(), analog zu pauseTopic()'s Grund-Eingabe —
@@ -3011,6 +3059,7 @@ function toggleExamSimDone(id){
   }
   saveExamSims();
   refreshAll();
+  renderExamSimSection(); renderPlan();
 }
 
 function mgCancel(){ mgResetForms(); renderManage(); }
