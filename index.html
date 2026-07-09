@@ -230,7 +230,7 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 .grid-gutter-label{position:absolute;left:0;right:0;text-align:right;font-size:9px;color:var(--txt3);font-variant-numeric:tabular-nums;transform:translateY(-50%)}
 .plan-grid{flex:1;position:relative;background:var(--bg2);border-radius:8px}
 .grid-hour-line{position:absolute;left:0;right:0;border-top:.5px solid var(--border)}
-.grid-now-line{position:absolute;left:0;right:0;border-top:2px solid #ff3b30;z-index:5}
+.grid-now-line{position:absolute;left:0;right:0;border-top:2px solid #ff3b30;z-index:5;transition:top 15s linear}
 .grid-now-dot{position:absolute;left:-4px;top:-4px;width:8px;height:8px;border-radius:50%;background:#ff3b30}
 .grid-block{position:absolute;left:3px;right:3px;border-radius:6px;padding:3px 7px;overflow:hidden;box-sizing:border-box;cursor:default}
 .grid-block-time{font-size:9px;font-weight:700;opacity:.8;line-height:1.2}
@@ -2212,10 +2212,13 @@ function generateSchedule(dayOffset){
 
 let _planEntries=[];
 
+// Pixel pro Minute im Kalenderraster — auch von tickNowLine() gebraucht (siehe
+// unten), deshalb hier auf Modulebene statt lokal in renderPlanGrid().
+const PXMIN=1.15;
+
 // Kalenderraster (Outlook-artige Tagesansicht): jeder Eintrag wird proportional
 // zu seiner Uhrzeit/Dauer als Block auf einer Stundenskala positioniert.
 function renderPlanGrid(entries, prefs){
-  const PXMIN=1.15;
   const gridStart=prefs.start, gridEnd=prefs.end;
   const totalH=Math.max(1,(gridEnd-gridStart)*PXMIN);
 
@@ -2226,9 +2229,13 @@ function renderPlanGrid(entries, prefs){
     lineHtml+=`<div class="grid-hour-line" style="top:${top}px"></div>`;
   }
 
-  const nowMin = new Date().getHours()*60+new Date().getMinutes();
+  // gridStart/gridEnd landen als data-Attribute an der Linie selbst, damit
+  // tickNowLine() sie nachträglich, ohne erneuten vollen Grid-Rebuild, wieder
+  // auslesen kann (auch für "Ideal" mit seinem dynamischen Fenster korrekt,
+  // ohne dessen Berechnung hier zu duplizieren).
+  const nowMin = new Date().getHours()*60+new Date().getMinutes()+new Date().getSeconds()/60;
   const nowHtml = (nowMin>=gridStart && nowMin<=gridEnd)
-    ? `<div class="grid-now-line" style="top:${(nowMin-gridStart)*PXMIN}px"><div class="grid-now-dot"></div></div>` : '';
+    ? `<div class="grid-now-line" data-grid-start="${gridStart}" data-grid-end="${gridEnd}" style="top:${(nowMin-gridStart)*PXMIN}px"><div class="grid-now-dot"></div></div>` : '';
 
   let blocksHtml='';
   for(const e of entries){
@@ -2442,6 +2449,30 @@ function renderQuickTimer(){
 
 // Öffnet das Tagesplan-Modal: Start-/Ende-Eingaben vorbelegen, Termin-Bereich +
 // den Plan selbst neu zeichnen.
+// Rückt die Jetzt-Linie im Kalenderraster in kleinen Schritten weiter, statt
+// dass sie nur bei einem vollständigen renderPlan()-Aufruf (z.B. nach einer
+// Termin-Änderung) neu positioniert wird — sonst stünde sie die meiste Zeit
+// still, obwohl "jetzt" sich ja durchgehend weiterbewegt. Reine Style-Änderung
+// am bestehenden Element (kein Re-Render), damit die CSS-transition auf
+// .grid-now-line (siehe <style> oben) tatsächlich sichtbar von der alten zur
+// neuen Position gleitet, statt bei jedem Tick zu springen. gridStart/gridEnd
+// kommen als data-Attribute von renderPlanGrid() mit, damit hier nicht
+// zusätzlich zwischen "Angepasst"/"Ideal"-Fenstern unterschieden werden muss.
+// Läuft die Zeit über gridEnd hinaus (Modal sehr lange offen gelassen),
+// blendet sich die Linie einfach aus, statt über den letzten Stundenstrich
+// hinauszulaufen.
+function tickNowLine(){
+  const line=document.querySelector('.grid-now-line');
+  if(!line) return;
+  const gridStart=parseFloat(line.dataset.gridStart);
+  const gridEnd=parseFloat(line.dataset.gridEnd);
+  const now=new Date();
+  const nowMin=now.getHours()*60+now.getMinutes()+now.getSeconds()/60;
+  if(nowMin>gridEnd){ line.style.display='none'; return; }
+  line.style.top=((nowMin-gridStart)*PXMIN)+'px';
+}
+let _nowLineInterval=null;
+
 function openPlan(){
   const prefs=getDayPrefs();
   document.getElementById('daystart-input').value = fmtTime(prefs.start);
@@ -2454,6 +2485,8 @@ function openPlan(){
   renderQuickTimer();
   clearInterval(_quickTimerInterval);
   if(quickTimer) _quickTimerInterval=setInterval(tickQuickTimer, 1000);
+  clearInterval(_nowLineInterval);
+  _nowLineInterval=setInterval(tickNowLine, 15000);
   document.getElementById('plan-bg').classList.add('open');
   document.body.style.overflow='hidden';
 }
@@ -2461,6 +2494,7 @@ function closePlan(){
   document.getElementById('plan-bg').classList.remove('open');
   document.body.style.overflow='';
   clearInterval(_quickTimerInterval);
+  clearInterval(_nowLineInterval);
 }
 function planBgClick(e){ if(e.target===document.getElementById('plan-bg')) closePlan(); }
 
