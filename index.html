@@ -95,6 +95,15 @@ input,button{font-family:inherit;font-size:inherit}
 .day-card{background:#16213e;border-radius:var(--r);padding:14px;margin-bottom:14px}
 .day-section-title{font-size:10px;font-weight:700;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.8px;margin-bottom:9px}
 .day-divider{height:.5px;background:rgba(255,255,255,.1);margin:12px 0}
+/* "Kick in den Arsch" — bewusst grell/pulsierend statt einer normalen Karte,
+   siehe subjectsInCrisis() in overview.js/index.html: soll bei echtem
+   Zeitdruck nicht übersehbar sein. prefers-reduced-motion lässt die
+   Pulsierung weg (siehe media query unten), Inhalt bleibt unverändert. */
+.crisis-banner{background:#ff3b30;border-radius:8px;padding:10px 12px;margin-bottom:10px;animation:crisis-pulse 1.6s ease-in-out infinite}
+.crisis-row{color:#fff;font-size:12.5px;font-weight:600;line-height:1.4}
+.crisis-row+.crisis-row{margin-top:6px}
+@keyframes crisis-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,59,48,.6)}50%{box-shadow:0 0 0 8px rgba(255,59,48,0)}}
+@media (prefers-reduced-motion:reduce){.crisis-banner{animation:none}}
 
 /* Review chips (Heute wiederholen) */
 .review-chips{display:flex;flex-wrap:wrap;gap:7px}
@@ -981,6 +990,33 @@ function examSimScore(sim){
 function readinessColor(pct){
   return pct>=80?'#34c759':pct>=50?'#ff9500':'#ff3b30';
 }
+
+// ── "Kick in den Arsch" ──────────────────────────────────────────────────────
+// Erkennt echte Krisen-Situationen — bewusst nicht dieselbe sanfte "Fokus
+// jetzt"-Karte, sondern eine grelle, unübersehbare Warnung (siehe
+// renderDayCard()) plus einmalig pro Fach/Tag eine System-Benachrichtigung
+// (siehe checkCrisisNotifications()/notifyCrisis()), weil ein normaler
+// Score-Rang bei echtem Zeitdruck leicht in der Prioritätsliste untergeht.
+// Zwei Auslöser (Nutzer-Wunsch 2026-07-09, "wenn's ernst wird"):
+//  - subjectPressure()>=1: selbst mit vollem Tagespensum reicht die Zeit bis
+//    zur Prüfung objektiv nicht mehr (Least-Laxity-Kennzahl, siehe oben).
+//  - Prüfung in <=3 Tagen UND subjectReadiness()<50%: die Prüfung ist quasi
+//    da, aber noch nicht mal die Hälfte des kombinierten Bereitschafts-Scores
+//    erreicht.
+function subjectsInCrisis(){
+  return SUBJECTS.map(s=>{
+    const pressure=subjectPressure(s.id);
+    const days=daysUntil(s.examDate);
+    const readiness=subjectReadiness(s.id);
+    if(pressure>=1){
+      return {subj:s, reason:'Selbst mit vollem Tagespensum reicht die Zeit bis zur Prüfung nicht mehr'};
+    }
+    if(days<=3 && readiness!==null && readiness<50){
+      return {subj:s, reason:`Prüfung in ${Math.max(0,Math.ceil(days))} Tagen, aber erst ${readiness}% bereit`};
+    }
+    return null;
+  }).filter(Boolean);
+}
 // Kurzer, einzeiliger Grund für den "🎯 Fokus jetzt"-Vorschlag in renderDayCard()
 // — bewusst nur EIN dominanter Grund statt eines vollständigen Mehrfach-Grund-
 // Arrays (wie es lerntracker-general für die aufgeklappte Themenzeile hat):
@@ -1028,11 +1064,12 @@ function saveHistory(sync=true){
 }
 function todayHistoryEntry(){
   const d=todayStr();
-  if(!HISTORY[d]) HISTORY[d]={reviewsDue:0, reviewsDone:[], subjPct:{}, drills:{}};
+  if(!HISTORY[d]) HISTORY[d]={reviewsDue:0, reviewsDone:[], subjPct:{}, drills:{}, crisisNotified:{}};
   const e=HISTORY[d];
   if(!e.reviewsDone) e.reviewsDone=[];
   if(!e.subjPct) e.subjPct={};
   if(!e.drills) e.drills={};
+  if(!e.crisisNotified) e.crisisNotified={};
   return e;
 }
 function logReviewDone(topicId){
@@ -1311,6 +1348,18 @@ function renderDayCard(){
         </div>`;
       })();
 
+  // "Kick in den Arsch" (siehe subjectsInCrisis() oben): bewusst NICHT als
+  // sanfte Karte wie "Fokus jetzt", sondern grell/pulsierend ganz oben im
+  // Tageskarte, damit es bei echtem Zeitdruck nicht im normalen Score-Ranking
+  // untergeht — keine Wegklick-Möglichkeit, bleibt sichtbar solange die Krise
+  // andauert. checkCrisisNotifications() feuert daneben höchstens einmal pro
+  // Fach/Tag zusätzlich eine System-Benachrichtigung.
+  const crises=subjectsInCrisis();
+  checkCrisisNotifications();
+  const crisisHtml=crises.length===0?'':`<div class="crisis-banner">
+    ${crises.map(c=>`<div class="crisis-row"><b>🔥 ${esc(c.subj.name)}:</b> JETZT ANFANGEN — ${esc(c.reason)}</div>`).join('')}
+  </div>`;
+
   // Streak/Wochen-Rückblick: bewusst nicht ans App-Öffnen gekoppelt, sondern an
   // tatsächlich erledigte Wiederholungen (siehe getStreak()) — ein Tag ohne
   // Log-Eintrag zählt dort optimistisch als "nichts versäumt".
@@ -1349,6 +1398,7 @@ function renderDayCard(){
     </div>`;
 
   document.getElementById('day-card').innerHTML=`<div class="day-card">
+    ${crisisHtml}
     ${streakHtml}
     <div class="day-section-title">🔄 Heute wiederholen</div>
     <div class="review-chips">${reviewHtml}</div>
@@ -2578,6 +2628,32 @@ function notifyTimerDone(mode){
   } else {
     try{ new Notification('Lernplan', {body}); }catch(e){}
   }
+}
+// System-Benachrichtigung für eine Krisen-Situation (siehe subjectsInCrisis()
+// oben) — analog zu notifyTimerDone(), aber pro Fach nur EINMAL pro Tag
+// (HISTORY.crisisNotified, siehe todayHistoryEntry()), sonst würde bei jedem
+// erneuten Öffnen der App dieselbe Warnung wieder aufploppen. Fragt selbst
+// KEINE Berechtigung an (kein Klick-Kontext hier) — läuft nur, falls schon
+// über den Schnell-Timer (startQuickTimer()) erteilt. Die Warnung IN der App
+// (renderDayCard()) bleibt davon unberührt und immer sichtbar, solange die
+// Krise andauert.
+function checkCrisisNotifications(){
+  if(!('Notification' in window) || Notification.permission!=='granted') return;
+  const e=todayHistoryEntry();
+  let changed=false;
+  subjectsInCrisis().forEach(c=>{
+    if(e.crisisNotified[c.subj.id]) return;
+    e.crisisNotified[c.subj.id]=true;
+    changed=true;
+    const body=`${c.subj.name}: ${c.reason}`;
+    const show=reg=>reg.showNotification('🔥 Jetzt anfangen!', {body, icon:'icon.svg', tag:'lt-crisis-'+c.subj.id});
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.ready.then(show).catch(()=>{});
+    } else {
+      try{ new Notification('🔥 Jetzt anfangen!', {body}); }catch(err){}
+    }
+  });
+  if(changed) saveHistory(false);
 }
 function renderQuickTimer(){
   const el=document.getElementById('quick-timer');
