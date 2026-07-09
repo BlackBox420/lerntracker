@@ -1714,12 +1714,34 @@ const MEAL_DEFAULTS = {
 };
 const MEAL_LABELS = {breakfast:'🍳 Frühstück', lunch:'🍽️ Mittagspause', dinner:'🍽️ Abendbrot'};
 
-// Migriert das alte Format (lunch/dinner als blanke Zahlen, keine dritte
-// Mahlzeit, nicht abschaltbar) auf das neue meals-Objekt — bestehende
+// Tagesplan-Einstellungen (Beginn/Ende/Mahlzeiten) sind PRO TAG gespeichert
+// (Schlüssel = Datum, siehe dateStrForOffset()) statt einer einzigen globalen
+// Einstellung — sonst würde z.B. "Morgen: Beginn 7 Uhr" auch den heutigen Plan
+// überschreiben, obwohl heute schon um 15 Uhr angefangen wurde (Nutzer-Meldung
+// 2026-07-09). Jeder Tag startet bei den festen Standardwerten und erbt NICHTS
+// von einem anderen Tag. Alte Tage werden beim Speichern aufgeräumt (nur die
+// letzten 14 Tage aufgehoben), analog zu saveTodayAppointments().
+function _migrateDayPrefsIfNeeded(){
+  const raw=JSON.parse(localStorage.getItem('lt-dayprefs')||'null');
+  if(!raw) return;
+  // Altes Format: EIN globales Einstellungs-Objekt statt eines Datums-Dicts —
+  // erkennbar an start/meals/lunch/dinun auf oberster Ebene (echte Datums-
+  // Schlüssel hätten diese Namen nie). Wird einmalig unter dem heutigen Datum
+  // übernommen; alle anderen (insbesondere zukünftigen) Tage starten bei den
+  // Standardwerten, nicht bei der übernommenen alten Einstellung.
+  if(raw.start!==undefined || raw.meals!==undefined || raw.lunch!==undefined || raw.dinner!==undefined){
+    localStorage.setItem('lt-dayprefs', JSON.stringify({[todayStr()]: raw}));
+  }
+}
+// Migriert zusätzlich das alte lunch/dinner-als-blanke-Zahlen-Format (keine
+// dritte Mahlzeit, nicht abschaltbar) auf das neue meals-Objekt — bestehende
 // Lunch-/Dinner-Zeiten bleiben dabei erhalten, Frühstück ist neu und startet
 // deaktiviert, damit sich am Tagesplan nichts ändert, bis man es selbst aktiviert.
-function getDayPrefs(){
-  const raw=JSON.parse(localStorage.getItem('lt-dayprefs')||'null');
+function getDayPrefs(dateStr){
+  dateStr=dateStr||todayStr();
+  _migrateDayPrefsIfNeeded();
+  const all=JSON.parse(localStorage.getItem('lt-dayprefs')||'{}');
+  const raw=all[dateStr];
   if(!raw) return {start:420,end:1260,meals:JSON.parse(JSON.stringify(MEAL_DEFAULTS))};
   if(!raw.meals){
     return {
@@ -1733,13 +1755,44 @@ function getDayPrefs(){
   }
   return raw;
 }
-function saveDayPrefs(p){ localStorage.setItem('lt-dayprefs', JSON.stringify(p)); }
+function saveDayPrefs(dateStr, p){
+  dateStr=dateStr||todayStr();
+  const all=JSON.parse(localStorage.getItem('lt-dayprefs')||'{}');
+  all[dateStr]=p;
+  const keys=Object.keys(all).sort();
+  while(keys.length>14){ delete all[keys.shift()]; }
+  localStorage.setItem('lt-dayprefs', JSON.stringify(all));
+}
+// Welches Datum die Tagesplan-Einstellungen (Beginn/Ende/Mahlzeiten) gerade
+// betreffen — richtet sich nach dem sichtbaren Heute/Morgen-Tab (planDayOffset,
+// siehe setPlanDay()), nicht nach dem tatsächlichen Kalendertag.
+function currentPlanDateStr(){ return dateStrForOffset(planDayOffset); }
+
+// Liefert die Einstellungen für einen Tag, für "heute" (dayOffset=0)
+// zusätzlich auf "jetzt" gekappt: Vergangenheit wird nicht neu berechnet oder
+// dargestellt — sonst würde eine Einstellungsänderung im Tagesverlauf (z.B.
+// Beginn nachträglich auf 15 Uhr gesetzt, weil man erst dann wirklich
+// angefangen hat) rückwirkend auch das schon vergangene Vormittags-Programm
+// umschreiben. Ein Block, der genau jetzt läuft (Start vor, Ende nach
+// "jetzt"), wird dadurch auf seinen verbleibenden Rest gekappt statt komplett
+// zu verschwinden oder unverändert von vorne gezeigt zu werden — echtes
+// Zeitreisen geht ohnehin nicht (Nutzer-Feedback 2026-07-09). Rein für
+// Platzierung/Anzeige (buildDayFrame()/renderPlan()); der in "Beginn"
+// gespeicherte Rohwert bleibt unverändert, das Eingabefeld zeigt also weiter,
+// was tatsächlich eingetragen wurde.
+function effectiveDayPrefs(dayOffset){
+  const prefs=getDayPrefs(dateStrForOffset(dayOffset));
+  if(dayOffset!==0) return prefs;
+  const now=new Date();
+  const nowMin=now.getHours()*60+now.getMinutes();
+  return nowMin>prefs.start ? {...prefs, start:nowMin} : prefs;
+}
 
 // Checkbox "Mahlzeit an/aus" bzw. Uhrzeit-Eingabe im Tagesplan-Modal.
 function toggleMealEnabled(key, enabled){
-  const p=getDayPrefs();
+  const p=getDayPrefs(currentPlanDateStr());
   p.meals[key].enabled=enabled;
-  saveDayPrefs(p);
+  saveDayPrefs(currentPlanDateStr(), p);
   // Zeit-Eingabefeld muss beim Umschalten mit-aktualisiert werden (disabled-
   // Zustand hängt an m.enabled), sonst bliebe es nach dem Anhaken weiter
   // ausgegraut, obwohl die Checkbox selbst schon aktiv ist.
@@ -1749,9 +1802,9 @@ function toggleMealEnabled(key, enabled){
 }
 function saveMealTime(key, hhmm){
   if(!hhmm) return;
-  const p=getDayPrefs();
+  const p=getDayPrefs(currentPlanDateStr());
   p.meals[key].time=toMin(hhmm);
-  saveDayPrefs(p);
+  saveDayPrefs(currentPlanDateStr(), p);
   renderPlan();
 }
 
@@ -1761,7 +1814,7 @@ function saveMealTime(key, hhmm){
 function renderMealsSection(){
   const el=document.getElementById('meals-section');
   if(!el) return;
-  const p=getDayPrefs();
+  const p=getDayPrefs(currentPlanDateStr());
   const rows=['breakfast','lunch','dinner'].map(key=>{
     const m=p.meals[key];
     return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
@@ -1777,19 +1830,21 @@ function renderMealsSection(){
 // Beginn-Zeit-Eingabe im Tagesplan-Modal: validiert, dass Beginn vor Ende liegt.
 function saveDayStart(hhmm){
   if(!hhmm) return;
-  const p=getDayPrefs();
+  const dateStr=currentPlanDateStr();
+  const p=getDayPrefs(dateStr);
   const newStart=toMin(hhmm);
   if(newStart>=p.end){ alert('Beginn muss vor dem Ende liegen.'); document.getElementById('daystart-input').value=fmtTime(p.start); return; }
-  p.start=newStart; saveDayPrefs(p);
+  p.start=newStart; saveDayPrefs(dateStr, p);
   renderPlan();
 }
 // Analog zu saveDayStart(), für die Ende-Zeit-Eingabe.
 function saveDayEnd(hhmm){
   if(!hhmm) return;
-  const p=getDayPrefs();
+  const dateStr=currentPlanDateStr();
+  const p=getDayPrefs(dateStr);
   const newEnd=toMin(hhmm);
   if(newEnd<=p.start){ alert('Ende muss nach dem Beginn liegen.'); document.getElementById('dayend-input').value=fmtTime(p.end); return; }
-  p.end=newEnd; saveDayPrefs(p);
+  p.end=newEnd; saveDayPrefs(dateStr, p);
   renderPlan();
 }
 
@@ -2182,7 +2237,7 @@ function generateIdealSchedule(){
 // werden. Mahlzeiten gelten dagegen an JEDEM Tag gleichermaßen (feste tägliche
 // Routine aus den Tagesplan-Einstellungen, nicht tagesspezifisch erfragt).
 function buildDayFrame(dayOffset){
-  const prefs=getDayPrefs();
+  const prefs=effectiveDayPrefs(dayOffset);
   const dateStr=dateStrForOffset(dayOffset);
   const appts=(dayOffset===0 ? (getTodayAppointments()||[]) : getAppointmentsForDate(dateStr))
     .map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
@@ -2322,10 +2377,18 @@ function setPlanDay(offset){
   planDayOffset=offset;
   document.getElementById('planday-today-btn').classList.toggle('active', offset===0);
   document.getElementById('planday-tomorrow-btn').classList.toggle('active', offset===1);
-  // Termine-Eingabe ist tagesspezifisch (heute vs. morgen) — Karteikarten-/
-  // Prüfungssimulations-Reservierung bleibt dagegen immer auf "heute" bezogen
-  // (siehe buildDayFrame()), daher bleibt examsim-section unabhängig vom Tab
-  // sichtbar.
+  // Beginn/Ende/Mahlzeiten sind jetzt pro Tag gespeichert (siehe getDayPrefs()/
+  // currentPlanDateStr()) — beim Tab-Wechsel also neu aus den Einstellungen
+  // DIESES Tages befüllen, sonst würden Beginn/Ende-Felder weiter den Stand
+  // des vorherigen Tabs zeigen.
+  const prefs=getDayPrefs(currentPlanDateStr());
+  document.getElementById('daystart-input').value = fmtTime(prefs.start);
+  document.getElementById('dayend-input').value = fmtTime(prefs.end);
+  renderMealsSection();
+  // Termine-Eingabe ist ebenfalls tagesspezifisch (heute vs. morgen). Offene
+  // Prüfungssimulationen rotieren dagegen inzwischen direkt in den
+  // Lernalgorithmus (siehe buildStudyChunks()/examSimScore()) und können daher
+  // an jedem Tag landen, examsim-section bleibt unabhängig vom Tab sichtbar.
   document.getElementById('appt-section').style.display = offset===0 ? '' : 'none';
   document.getElementById('appt-section-tomorrow').style.display = offset===1 ? '' : 'none';
   if(offset===1) renderTomorrowApptSection();
@@ -2347,7 +2410,7 @@ function renderPlan(){
   // dem tatsächlichen Ende der Zuteilung, mindestens aber eine Stunde.
   const gridPrefs=isIdeal
     ? {start:420, end:Math.max((entries[entries.length-1]||{}).time||420, 480)}
-    : getDayPrefs();
+    : effectiveDayPrefs(planDayOffset);
   document.getElementById('plan-content').innerHTML = renderPlanGrid(entries, gridPrefs);
 }
 
@@ -2508,10 +2571,8 @@ function tickNowLine(){
 let _nowLineInterval=null;
 
 function openPlan(){
-  const prefs=getDayPrefs();
-  document.getElementById('daystart-input').value = fmtTime(prefs.start);
-  document.getElementById('dayend-input').value = fmtTime(prefs.end);
-  renderMealsSection();
+  // daystart/dayend/Mahlzeiten werden von setPlanDay(0) unten befüllt (dort
+  // pro Tag korrekt aus currentPlanDateStr() gelesen statt hier dupliziert).
   renderApptSection();
   renderExamSimSection();
   setPlanView('adapted');
