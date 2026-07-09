@@ -371,20 +371,26 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
     <button class="modal-close" onclick="closePlan()">✕</button>
     <div class="modal-title">📅 Tagesplan</div>
     <div class="modal-sub" id="plan-date"></div>
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:8px">
-        <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Beginn</label>
-        <input type="time" id="daystart-input" onchange="saveDayStart(this.value)"
-          style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
-      </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Ende</label>
-        <input type="time" id="dayend-input" onchange="saveDayEnd(this.value)"
-          style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
-      </div>
+    <div class="tab-bar" style="margin-bottom:12px">
+      <button class="tab-btn active" id="planview-adapted-btn" onclick="setPlanView('adapted')">📌 Angepasst</button>
+      <button class="tab-btn" id="planview-ideal-btn" onclick="setPlanView('ideal')">✨ Ideal</button>
     </div>
-    <div id="meals-section" style="margin-bottom:14px"></div>
-    <div id="appt-section" style="margin-bottom:14px"></div>
+    <div id="plan-settings">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Beginn</label>
+          <input type="time" id="daystart-input" onchange="saveDayStart(this.value)"
+            style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Ende</label>
+          <input type="time" id="dayend-input" onchange="saveDayEnd(this.value)"
+            style="padding:6px 9px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:13px">
+        </div>
+      </div>
+      <div id="meals-section" style="margin-bottom:14px"></div>
+      <div id="appt-section" style="margin-bottom:14px"></div>
+    </div>
     <div id="plan-content"></div>
     <button class="copy-btn" id="copy-btn" onclick="copyPlan()">📋 Als Text kopieren</button>
   </div>
@@ -1787,46 +1793,16 @@ function estimatedCardMinutesPerDay(){
 // Ablauf: 1) feste Blöcke (Termine+Mahlzeiten+Karteikarten-Zeit) chronologisch
 // durchgehen und die Lücken dazwischen mit fillWindow() auffüllen, 2) danach ggf.
 // noch ein Wiederholungs-Block ans Ende, falls Zeit übrig ist.
-function generateSchedule(){
-  const prefs=getDayPrefs();
-  const appts=(getTodayAppointments()||[]).map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
-  const cardMin=estimatedCardMinutesPerDay();
-  // Mahlzeiten kommen jetzt aus prefs.meals statt fixer lunch/dinner-Werte —
-  // jede der drei (Frühstück/Mittag-/Abendessen) ist einzeln an-/abschaltbar
-  // und hat eine selbst gewählte Uhrzeit (siehe renderMealsSection()).
-  const mealBlocks=Object.entries(prefs.meals)
-    .filter(([,m])=>m.enabled)
-    .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key]}));
-  const fixedRaw=mergeIntervals([
-    ...appts.map(a=>({...a, label:'📌 '+a.label})),
-    ...mealBlocks,
-    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[])
-  ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
-  // renderPlanGrid() hebt Blöcke unter ~16min optisch auf eine Mindesthöhe
-  // (18px), damit Zeit+Label lesbar bleiben — ohne eine entsprechende
-  // Mindest-DAUER hier würde so ein Block über sein tatsächliches Ende hinaus
-  // ins nächste Element hineinragen (kurze Termine/Karteikarten-Fenster waren
-  // zeitlich korrekt, aber optisch zu kurz platziert — Ursache der
-  // überlappenden Blöcke). Deckelt die Verlängerung auf den Start des
-  // nächsten Blocks, damit daraus kein neuer echter Überlapp entsteht.
-  const MIN_BLOCK_DUR=16;
-  const fixed=fixedRaw.map((iv,i)=>{
-    const cap=i+1<fixedRaw.length ? fixedRaw[i+1].start : prefs.end;
-    return {...iv, end:Math.min(Math.max(iv.end, iv.start+MIN_BLOCK_DUR), cap)};
-  });
-
-  // ── Phase 1: Zuteilung ───────────────────────────────────────────────────
-  // WELCHE Themen in WELCHER Reihenfolge WIE LANGE drankommen, wird hier
-  // vollständig unabhängig von Uhrzeiten/Fenstergrenzen entschieden — die
-  // frühere Version hat diese Entscheidung mit der Platzierung in die freien
-  // Tages-Fenster vermischt (fillWindow() hat live rotiert, je nachdem wie viel
-  // Zeit gerade noch in einem Fenster übrig war). Dadurch konnte eine winzige
-  // Änderung an Start-/Ende-Zeit oder einer Mahlzeit die Rundung in einem
-  // frühen Fenster kippen ("Thema wird JETZT fertig" vs. "erst im nächsten
-  // Fenster"), was die Rotations-Reihenfolge für den ganzen Resttag verschob —
-  // ein klassischer Schmetterlingseffekt einer zustandsbehafteten Simulation.
-  // Hier hängt die Reihenfolge nur noch von Scores/geschätzten Dauern ab, gar
-  // nicht von der Uhr, und ist damit robust gegen solche kleinen Änderungen.
+// ── Phase 1: Zuteilung ─────────────────────────────────────────────────────
+// WELCHE Themen in WELCHER Reihenfolge WIE LANGE drankommen, komplett
+// unabhängig von Uhrzeiten/Fenstergrenzen — dieselbe Zuteilung nutzen sowohl
+// der "angepasste" Tagesplan (generateSchedule(), Phase 2 unten platziert sie
+// in die freien Fenster zwischen Terminen/Mahlzeiten) als auch der "ideale"
+// Tagesplan (generateIdealSchedule(), platziert sie ohne jede Rücksicht auf
+// Termine/Mahlzeiten/Tagesfenster). Reihenfolge hängt nur von Scores/
+// geschätzten Dauern ab, kennt gar keine Uhrzeit — robust gegen kleine
+// Änderungen an Start-/Ende-Zeit oder Mahlzeiten (siehe Commit vom 2026-07-09).
+function buildStudyChunks(){
   const bySubj={};
   TOPICS.forEach(t=>{
     const score=calcScore(t);
@@ -1860,17 +1836,25 @@ function generateSchedule(){
       stintLeft=SESSION_LEN;
     }
   }
-
-  const reviewQ = TOPICS.map(t=>({...t,score:calcScore(t)}))
+  return chunks;
+}
+function buildReviewQueue(){
+  return TOPICS.map(t=>({...t,score:calcScore(t)}))
     .filter(t=>isReviewTopic(t)&&!reviewedToday(t.id)&&t.score>0.05)
     .sort((a,b)=>b.score-a.score);
+}
 
-  // ── Phase 2: Platzierung ─────────────────────────────────────────────────
-  // Die in Phase 1 fertig entschiedene Reihenfolge wird nur noch der Reihe
-  // nach in die freien Fenster des Tages einsetzt. Passt ein Chunk nicht ganz
-  // ins aktuelle Fenster, wird er an der Fenstergrenze aufgeteilt und im
-  // nächsten Fenster fortgesetzt (derselbe Chunk, keine neue Entscheidung) —
-  // die Reihenfolge selbst steht schon fest und kann hier nicht mehr kippen.
+// ── Phase 2: Platzierung ───────────────────────────────────────────────────
+// Setzt eine fertige Chunk-Reihenfolge (siehe buildStudyChunks()) der Reihe
+// nach in die freien Fenster zwischen den übergebenen `fixed`-Blöcken ein,
+// innerhalb von prefs.start..prefs.end. Passt ein Chunk nicht ganz ins
+// aktuelle Fenster, wird er an der Fenstergrenze aufgeteilt und im nächsten
+// Fenster fortgesetzt (derselbe Chunk, keine neue Entscheidung) — die
+// Reihenfolge selbst steht in Phase 1 schon fest und kann hier nicht mehr
+// kippen. Gemeinsam genutzt von generateSchedule() (echte Termine/Mahlzeiten/
+// Tagesfenster als `fixed`/`prefs`) und generateIdealSchedule() (keine festen
+// Blöcke, großzügiges Standard-Tagesfenster).
+function placeChunks(chunks, reviewQ, fixed, prefs){
   const entries=[];
   let cur=prefs.start, studySince=0;
   let chunkIdx=0, chunkOffset=0;
@@ -1879,7 +1863,7 @@ function generateSchedule(){
     while(cur<end-14 && chunkIdx<chunks.length){
       if(studySince>=90){
         const brk=Math.min(20,end-cur);
-        // Mindestens 16min (siehe MIN_BLOCK_DUR oben): eine kürzere Pause würde
+        // Mindestens 16min (siehe MIN_BLOCK_DUR unten): eine kürzere Pause würde
         // im Kalenderraster optisch auf 18px Mindesthöhe gehoben und dadurch
         // ins direkt anschliessende Element hineinragen. Ein zu kurzes Restfenster
         // bleibt lieber ganz ungenutzt, als einen überlappenden Mini-Block zu zeigen.
@@ -1922,6 +1906,53 @@ function generateSchedule(){
 
   entries.push({type:'end',time:Math.min(cur,prefs.end)});
   return entries;
+}
+
+// "Ideal"-Tagesplan: dieselbe Zuteilung wie der reguläre Plan
+// (buildStudyChunks()), aber OHNE jede persönliche Einschränkung — keine
+// Termine, keine Mahlzeiten, keine selbst gewählte Start-/Endzeit (`fixed=[]`,
+// großzügiges Standard-Tagesfenster 07:00–23:00 statt der echten Einstellungen).
+// Bewusst trotzdem auf EINEN Tag begrenzt (nicht unbegrenzt bis die komplette
+// Zuteilung passt) — sonst würde bei vielen offenen Themen ein technisch
+// "korrekter", aber nutzloser 30+-Stunden-Tag herauskommen. Zeigt so: was
+// wäre heute rein nach Priorität dran, wenn nichts anderes anstünde.
+function generateIdealSchedule(){
+  const chunks=buildStudyChunks();
+  const reviewQ=buildReviewQueue();
+  return placeChunks(chunks, reviewQ, [], {start:420, end:1380});
+}
+
+function generateSchedule(){
+  const prefs=getDayPrefs();
+  const appts=(getTodayAppointments()||[]).map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
+  const cardMin=estimatedCardMinutesPerDay();
+  // Mahlzeiten kommen jetzt aus prefs.meals statt fixer lunch/dinner-Werte —
+  // jede der drei (Frühstück/Mittag-/Abendessen) ist einzeln an-/abschaltbar
+  // und hat eine selbst gewählte Uhrzeit (siehe renderMealsSection()).
+  const mealBlocks=Object.entries(prefs.meals)
+    .filter(([,m])=>m.enabled)
+    .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key]}));
+  const fixedRaw=mergeIntervals([
+    ...appts.map(a=>({...a, label:'📌 '+a.label})),
+    ...mealBlocks,
+    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[])
+  ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
+  // renderPlanGrid() hebt Blöcke unter ~16min optisch auf eine Mindesthöhe
+  // (18px), damit Zeit+Label lesbar bleiben — ohne eine entsprechende
+  // Mindest-DAUER hier würde so ein Block über sein tatsächliches Ende hinaus
+  // ins nächste Element hineinragen (kurze Termine/Karteikarten-Fenster waren
+  // zeitlich korrekt, aber optisch zu kurz platziert — Ursache der
+  // überlappenden Blöcke). Deckelt die Verlängerung auf den Start des
+  // nächsten Blocks, damit daraus kein neuer echter Überlapp entsteht.
+  const MIN_BLOCK_DUR=16;
+  const fixed=fixedRaw.map((iv,i)=>{
+    const cap=i+1<fixedRaw.length ? fixedRaw[i+1].start : prefs.end;
+    return {...iv, end:Math.min(Math.max(iv.end, iv.start+MIN_BLOCK_DUR), cap)};
+  });
+
+  const chunks=buildStudyChunks();
+  const reviewQ=buildReviewQueue();
+  return placeChunks(chunks, reviewQ, fixed, prefs);
 }
 
 let _planEntries=[];
@@ -1976,17 +2007,36 @@ function renderPlanGrid(entries, prefs){
 // Ruft generateSchedule() auf, merkt sich das Ergebnis in _planEntries (für
 // planToText()/copyPlan()) und zeichnet das Kalenderraster. Wird nach jeder
 // Änderung an Terminen/Start-/Endzeit erneut aufgerufen.
+// 'adapted' = an Termine/Mahlzeiten/Tagesfenster angepasst (bisheriges
+// Verhalten), 'ideal' = reine Prioritäts-Zuteilung ohne jede Einschränkung
+// (siehe generateIdealSchedule()). Wird beim Öffnen des Modals zurückgesetzt.
+let planViewMode='adapted';
+function setPlanView(mode){
+  planViewMode=mode;
+  document.getElementById('planview-adapted-btn').classList.toggle('active', mode==='adapted');
+  document.getElementById('planview-ideal-btn').classList.toggle('active', mode==='ideal');
+  // Beginn/Ende/Mahlzeiten/Termine gelten nur für den angepassten Plan — für
+  // "Ideal" wären sie irreführend, da dieser sie bewusst ignoriert.
+  document.getElementById('plan-settings').style.display = mode==='adapted' ? '' : 'none';
+  renderPlan();
+}
+
 function renderPlan(){
-  const prefs=getDayPrefs();
-  const entries=generateSchedule();
+  const isIdeal=planViewMode==='ideal';
+  const entries=isIdeal ? generateIdealSchedule() : generateSchedule();
   _planEntries=entries;
   const totalStudy=entries.filter(e=>e.type==='topic').reduce((a,e)=>a+e.t.dur,0);
 
   document.getElementById('plan-date').textContent=
     new Date().toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long'})+
-    ' · ~'+Math.round(totalStudy/60*10)/10+'h Lernzeit';
+    ' · ~'+Math.round(totalStudy/60*10)/10+'h Lernzeit'+(isIdeal?' (ideal, ohne Termine)':'');
 
-  document.getElementById('plan-content').innerHTML = renderPlanGrid(entries, prefs);
+  // "Ideal" hat kein festes Tagesfenster — die Rasterhöhe richtet sich nach
+  // dem tatsächlichen Ende der Zuteilung, mindestens aber eine Stunde.
+  const gridPrefs=isIdeal
+    ? {start:420, end:Math.max((entries[entries.length-1]||{}).time||420, 480)}
+    : getDayPrefs();
+  document.getElementById('plan-content').innerHTML = renderPlanGrid(entries, gridPrefs);
 }
 
 // Wandelt _planEntries in reinen Text um, für den "Als Text kopieren"-Button
@@ -2028,7 +2078,7 @@ function openPlan(){
   document.getElementById('dayend-input').value = fmtTime(prefs.end);
   renderMealsSection();
   renderApptSection();
-  renderPlan();
+  setPlanView('adapted');
   document.getElementById('plan-bg').classList.add('open');
   document.body.style.overflow='hidden';
 }
