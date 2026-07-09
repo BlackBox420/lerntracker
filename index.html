@@ -385,6 +385,10 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
       <button class="tab-btn" id="planview-ideal-btn" onclick="setPlanView('ideal')">✨ Ideal</button>
     </div>
     <div id="plan-settings">
+      <div class="tab-bar" style="margin-bottom:12px">
+        <button class="tab-btn active" id="planday-today-btn" onclick="setPlanDay(0)">Heute</button>
+        <button class="tab-btn" id="planday-tomorrow-btn" onclick="setPlanDay(1)">Morgen</button>
+      </div>
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:8px">
           <label style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px">Beginn</label>
@@ -399,6 +403,7 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
       </div>
       <div id="meals-section" style="margin-bottom:14px"></div>
       <div id="appt-section" style="margin-bottom:14px"></div>
+      <div id="appt-section-tomorrow" style="margin-bottom:14px;display:none"></div>
       <div id="examsim-section" style="margin-bottom:14px"></div>
     </div>
     <div id="plan-content"></div>
@@ -1807,6 +1812,65 @@ function dismissApptPrompt(){
   renderApptSection();
 }
 
+// Verallgemeinerte Varianten für einen BELIEBIGEN Tag (aktuell nur "morgen"
+// genutzt, siehe Tagesplan-Tabs "Heute"/"Morgen") — anders als bei heute gibt
+// es hier keine null-vs-[]-Unterscheidung: Vorausplanen ist rein freiwillig,
+// es gibt keinen "haben wir schon gefragt"-Hinweis, der das bräuchte.
+function getAppointmentsForDate(dateStr){
+  const all=JSON.parse(localStorage.getItem('lt-appointments')||'{}');
+  return all[dateStr]||[];
+}
+function saveAppointmentsForDate(dateStr, list){
+  const all=JSON.parse(localStorage.getItem('lt-appointments')||'{}');
+  all[dateStr]=list;
+  const keys=Object.keys(all).sort();
+  while(keys.length>7){ delete all[keys.shift()]; }
+  localStorage.setItem('lt-appointments', JSON.stringify(all));
+}
+function dateStrForOffset(dayOffset){
+  const d=new Date(); d.setDate(d.getDate()+dayOffset);
+  return localDateStr(d);
+}
+
+// Termine für morgen (Tagesplan-Tab "Morgen") — schlanker als renderApptSection()
+// oben: kein "haben wir schon gefragt"-Hinweisbanner, da Vorausplanen rein
+// freiwillig ist und nicht täglich abgefragt werden muss.
+function renderTomorrowApptSection(){
+  const el=document.getElementById('appt-section-tomorrow');
+  if(!el) return;
+  const list=getAppointmentsForDate(dateStrForOffset(1));
+  el.innerHTML=`
+    ${list.map((a,i)=>`<span class="appt-chip">📌 ${esc(a.label)} ${esc(a.start)}–${esc(a.end)} <a href="#" onclick="removeTomorrowAppointment(${i});return false">✕</a></span>`).join('')}
+    <div class="appt-add-row">
+      <input type="time" id="appt-start-input-tom">
+      <input type="time" id="appt-end-input-tom">
+      <input type="text" id="appt-label-input-tom" placeholder="z.B. Training">
+      <button class="appt-add-btn" onclick="addTomorrowAppointment()">+</button>
+    </div>
+  `;
+}
+function addTomorrowAppointment(){
+  const s=document.getElementById('appt-start-input-tom').value;
+  const e=document.getElementById('appt-end-input-tom').value;
+  const l=(document.getElementById('appt-label-input-tom').value||'').trim();
+  if(!s||!e){ alert('Bitte Start- und Endzeit angeben.'); return; }
+  if(toMin(e)<=toMin(s)){ alert('Ende muss nach dem Start liegen.'); return; }
+  const dateStr=dateStrForOffset(1);
+  const list=getAppointmentsForDate(dateStr);
+  list.push({start:s,end:e,label:l||'Termin'});
+  saveAppointmentsForDate(dateStr, list);
+  renderTomorrowApptSection();
+  renderPlan();
+}
+function removeTomorrowAppointment(i){
+  const dateStr=dateStrForOffset(1);
+  const list=getAppointmentsForDate(dateStr);
+  list.splice(i,1);
+  saveAppointmentsForDate(dateStr, list);
+  renderTomorrowApptSection();
+  renderPlan();
+}
+
 // Zeichnet den Termin-Bereich oben im Tagesplan-Modal: bestehende Termine als
 // Chips (mit ✕ zum Entfernen) + das Formular zum Hinzufügen + ggf. den einmaligen
 // Hinweistext, solange für heute noch nichts eingetragen/übersprungen wurde.
@@ -1986,10 +2050,18 @@ function buildReviewQueue(){
 // kippen. Gemeinsam genutzt von generateSchedule() (echte Termine/Mahlzeiten/
 // Tagesfenster als `fixed`/`prefs`) und generateIdealSchedule() (keine festen
 // Blöcke, großzügiges Standard-Tagesfenster).
-function placeChunks(chunks, reviewQ, fixed, prefs){
+// Setzt eine fertige Chunk-Reihenfolge (buildStudyChunks()) der Reihe nach in
+// die freien Fenster EINES Tages ein. Passt ein Chunk nicht ganz ins aktuelle
+// Fenster, wird er an der Fenstergrenze aufgeteilt und im nächsten Fenster
+// fortgesetzt (derselbe Chunk, keine neue Entscheidung). Nimmt/liefert den
+// Fortschritts-`state` (chunkIdx/chunkOffset/reviewShown) explizit entgegen/
+// zurück, damit generateSchedule() ihn über mehrere Tage hinweg weiterreichen
+// kann (Tag 2 setzt fort, wo Tag 1 aufgehört hat, statt denselben Stoff
+// nochmal zu zeigen) — siehe Tagesplan-Tabs "Heute"/"Morgen".
+function placeChunksFrame(chunks, reviewQ, fixed, prefs, state){
   const entries=[];
   let cur=prefs.start, studySince=0;
-  let chunkIdx=0, chunkOffset=0;
+  let {chunkIdx, chunkOffset, reviewShown}=state;
 
   function fillWindow(end){
     while(cur<end-14 && chunkIdx<chunks.length){
@@ -2028,16 +2100,20 @@ function placeChunks(chunks, reviewQ, fixed, prefs){
   }
   fillWindow(prefs.end);
 
-  if(reviewQ.length>0 && cur<prefs.end-15){
+  // Der Wiederholungs-Block wird nur EINMAL über beide Tage hinweg gezeigt
+  // (dort, wo zuerst noch Platz ist) — reviewShown verhindert eine Dopplung
+  // auf "morgen", falls er schon heute untergebracht wurde.
+  if(!reviewShown && reviewQ.length>0 && cur<prefs.end-15){
     const dur=Math.min(75, prefs.end-cur-15>0?prefs.end-cur:0);
     if(dur>=20){
       entries.push({type:'review',topics:reviewQ,dur,time:cur});
       cur+=dur;
+      reviewShown=true;
     }
   }
 
   entries.push({type:'end',time:Math.min(cur,prefs.end)});
-  return entries;
+  return {entries, state:{chunkIdx, chunkOffset, reviewShown}};
 }
 
 // "Ideal"-Tagesplan: dieselbe Zuteilung wie der reguläre Plan
@@ -2047,17 +2123,28 @@ function placeChunks(chunks, reviewQ, fixed, prefs){
 // Bewusst trotzdem auf EINEN Tag begrenzt (nicht unbegrenzt bis die komplette
 // Zuteilung passt) — sonst würde bei vielen offenen Themen ein technisch
 // "korrekter", aber nutzloser 30+-Stunden-Tag herauskommen. Zeigt so: was
-// wäre heute rein nach Priorität dran, wenn nichts anderes anstünde.
+// wäre heute rein nach Priorität dran, wenn nichts anderes anstünde. Kennt
+// bewusst kein "Morgen" (anders als der angepasste Plan) — ohne echte Termine/
+// Tagesfenster wäre ein zweiter Ideal-Tag nur eine Wiederholung derselben
+// hypothetischen Momentaufnahme, kein zusätzlicher Erkenntnisgewinn.
 function generateIdealSchedule(){
   const chunks=buildStudyChunks();
   const reviewQ=buildReviewQueue();
-  return placeChunks(chunks, reviewQ, [], {start:420, end:1380});
+  return placeChunksFrame(chunks, reviewQ, [], {start:420, end:1380}, {chunkIdx:0, chunkOffset:0, reviewShown:false}).entries;
 }
 
-function generateSchedule(){
+// Feste Blöcke + Tagesfenster für einen bestimmten Tag (0=heute, 1=morgen).
+// Karteikarten-/Prüfungssimulations-Reservierung nur für heute (dayOffset 0)
+// — für Folgetage wäre eine Vorhersage rein spekulativ (was bis morgen
+// erledigt ist, steht ja noch nicht fest) und soll nicht künstlich dupliziert
+// werden. Mahlzeiten gelten dagegen an JEDEM Tag gleichermaßen (feste tägliche
+// Routine aus den Tagesplan-Einstellungen, nicht tagesspezifisch erfragt).
+function buildDayFrame(dayOffset){
   const prefs=getDayPrefs();
-  const appts=(getTodayAppointments()||[]).map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
-  const cardMin=estimatedCardMinutesPerDay();
+  const dateStr=dateStrForOffset(dayOffset);
+  const appts=(dayOffset===0 ? (getTodayAppointments()||[]) : getAppointmentsForDate(dateStr))
+    .map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
+  const cardMin=dayOffset===0 ? estimatedCardMinutesPerDay() : 0;
   // Mahlzeiten kommen jetzt aus prefs.meals statt fixer lunch/dinner-Werte —
   // jede der drei (Frühstück/Mittag-/Abendessen) ist einzeln an-/abschaltbar
   // und hat eine selbst gewählte Uhrzeit (siehe renderMealsSection()).
@@ -2074,11 +2161,11 @@ function generateSchedule(){
   // mergeIntervals() weiter oben. Titel und Gesamtdauer bleiben dabei erhalten,
   // nur optisch wird daraus ein Block statt mehrerer.
   let examCursor=prefs.start+cardMin;
-  const examBlocks=openPendingExamSims().map(e=>{
+  const examBlocks=dayOffset===0 ? openPendingExamSims().map(e=>{
     const blk={start:examCursor, end:examCursor+e.durationMin, label:`🎓 ${S_MAP[e.subj].short}: ${e.title}`};
     examCursor+=e.durationMin;
     return blk;
-  });
+  }) : [];
   const fixedRaw=mergeIntervals([
     ...appts.map(a=>({...a, label:'📌 '+a.label})),
     ...mealBlocks,
@@ -2097,10 +2184,30 @@ function generateSchedule(){
     const cap=i+1<fixedRaw.length ? fixedRaw[i+1].start : prefs.end;
     return {...iv, end:Math.min(Math.max(iv.end, iv.start+MIN_BLOCK_DUR), cap)};
   });
+  return {fixed, prefs};
+}
 
+// Baut den Tagesplan als flache Liste von "entries" für den angegebenen
+// Tages-Offset (0=heute, 1=morgen). Verbraucht dieselbe Zuteilung
+// (buildStudyChunks()) LINEAR über alle Tage bis einschliesslich des
+// angeforderten Offsets — Tag 2 setzt fort, wo Tag 1 aufgehört hat, statt von
+// vorn zu beginnen (sonst würde "morgen" denselben Stoff nochmal zeigen statt
+// weiterzumachen). Für dayOffset=0 identisch zum bisherigen Verhalten. Etwas
+// Mehrarbeit (Tag 0 wird bei einer Abfrage für Tag 1 nochmal mitberechnet),
+// aber unschädlich, da rein deterministisch ohne Seiteneffekte.
+function generateSchedule(dayOffset){
+  dayOffset=dayOffset||0;
   const chunks=buildStudyChunks();
   const reviewQ=buildReviewQueue();
-  return placeChunks(chunks, reviewQ, fixed, prefs);
+  let state={chunkIdx:0, chunkOffset:0, reviewShown:false};
+  let entries=[];
+  for(let day=0; day<=dayOffset; day++){
+    const frame=buildDayFrame(day);
+    const placed=placeChunksFrame(chunks, reviewQ, frame.fixed, frame.prefs, state);
+    entries=placed.entries;
+    state=placed.state;
+  }
+  return entries;
 }
 
 let _planEntries=[];
@@ -2163,20 +2270,40 @@ function setPlanView(mode){
   planViewMode=mode;
   document.getElementById('planview-adapted-btn').classList.toggle('active', mode==='adapted');
   document.getElementById('planview-ideal-btn').classList.toggle('active', mode==='ideal');
-  // Beginn/Ende/Mahlzeiten/Termine gelten nur für den angepassten Plan — für
-  // "Ideal" wären sie irreführend, da dieser sie bewusst ignoriert.
+  // Beginn/Ende/Mahlzeiten/Termine/Heute-Morgen-Tabs gelten nur für den
+  // angepassten Plan — für "Ideal" wären sie irreführend, da dieser sie
+  // bewusst ignoriert (kein "Morgen" dort, siehe generateIdealSchedule()).
   document.getElementById('plan-settings').style.display = mode==='adapted' ? '' : 'none';
+  renderPlan();
+}
+
+// 0=heute, 1=morgen — welcher Tagesplan-Tab innerhalb von "Angepasst" gerade
+// sichtbar ist (siehe setPlanDay()). Wird beim Öffnen des Modals auf "heute"
+// zurückgesetzt. Ohne Bedeutung im "Ideal"-Modus (dort ausgeblendet).
+let planDayOffset=0;
+function setPlanDay(offset){
+  planDayOffset=offset;
+  document.getElementById('planday-today-btn').classList.toggle('active', offset===0);
+  document.getElementById('planday-tomorrow-btn').classList.toggle('active', offset===1);
+  // Termine-Eingabe ist tagesspezifisch (heute vs. morgen) — Karteikarten-/
+  // Prüfungssimulations-Reservierung bleibt dagegen immer auf "heute" bezogen
+  // (siehe buildDayFrame()), daher bleibt examsim-section unabhängig vom Tab
+  // sichtbar.
+  document.getElementById('appt-section').style.display = offset===0 ? '' : 'none';
+  document.getElementById('appt-section-tomorrow').style.display = offset===1 ? '' : 'none';
+  if(offset===1) renderTomorrowApptSection();
   renderPlan();
 }
 
 function renderPlan(){
   const isIdeal=planViewMode==='ideal';
-  const entries=isIdeal ? generateIdealSchedule() : generateSchedule();
+  const entries=isIdeal ? generateIdealSchedule() : generateSchedule(planDayOffset);
   _planEntries=entries;
   const totalStudy=entries.filter(e=>e.type==='topic').reduce((a,e)=>a+e.t.dur,0);
 
+  const d=new Date(); if(!isIdeal) d.setDate(d.getDate()+planDayOffset);
   document.getElementById('plan-date').textContent=
-    new Date().toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long'})+
+    d.toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long'})+
     ' · ~'+Math.round(totalStudy/60*10)/10+'h Lernzeit'+(isIdeal?' (ideal, ohne Termine)':'');
 
   // "Ideal" hat kein festes Tagesfenster — die Rasterhöhe richtet sich nach
@@ -2190,7 +2317,8 @@ function renderPlan(){
 // Wandelt _planEntries in reinen Text um, für den "Als Text kopieren"-Button
 // (z.B. zum Einfügen in eine Notiz-App oder einen Kalender-Eintrag).
 function planToText(){
-  const date=new Date().toLocaleDateString('de-CH',{weekday:'short',day:'numeric',month:'short'});
+  const d=new Date(); if(planViewMode!=='ideal') d.setDate(d.getDate()+planDayOffset);
+  const date=d.toLocaleDateString('de-CH',{weekday:'short',day:'numeric',month:'short'});
   const lines=['📅 Tagesplan '+date,''];
   for(const e of _planEntries){
     if(e.type==='topic'){
@@ -2322,6 +2450,7 @@ function openPlan(){
   renderApptSection();
   renderExamSimSection();
   setPlanView('adapted');
+  setPlanDay(0);
   renderQuickTimer();
   clearInterval(_quickTimerInterval);
   if(quickTimer) _quickTimerInterval=setInterval(tickQuickTimer, 1000);
