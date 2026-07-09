@@ -295,6 +295,14 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 .mg-finish-btn{width:100%;padding:14px;border-radius:10px;border:none;background:#34c759;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px}
 .mg-finish-btn:disabled{background:var(--bg3);color:var(--txt3);cursor:not-allowed}
 
+/* Schnell-Timer (90/20 Minuten) im Tagesplan */
+.timer-card{border:1.5px solid;border-radius:10px;padding:10px 12px;background:var(--bg2)}
+.timer-top{display:flex;align-items:center;gap:8px}
+.timer-name{flex:1;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.timer-clock{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;flex-shrink:0}
+.timer-actions{display:flex;gap:8px;margin-top:8px}
+.timer-actions button{padding:8px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer}
+
 /* Meilenstein-Toast (Gamification) */
 .toast{position:fixed;top:12px;left:50%;transform:translateX(-50%) translateY(-8px);z-index:150;background:#1c1c1e;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .3s ease,transform .35s cubic-bezier(.34,1.56,.64,1);max-width:90%;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -371,6 +379,7 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
     <button class="modal-close" onclick="closePlan()">✕</button>
     <div class="modal-title">📅 Tagesplan</div>
     <div class="modal-sub" id="plan-date"></div>
+    <div id="quick-timer" style="margin-bottom:14px"></div>
     <div class="tab-bar" style="margin-bottom:12px">
       <button class="tab-btn active" id="planview-adapted-btn" onclick="setPlanView('adapted')">📌 Angepasst</button>
       <button class="tab-btn" id="planview-ideal-btn" onclick="setPlanView('ideal')">✨ Ideal</button>
@@ -2070,6 +2079,75 @@ function copyPlan(){
   });
 }
 
+// ── Schnell-Timer (90/20 Minuten) ────────────────────────────────────────────
+// Einfacher, eigenständiger Countdown — nicht an ein bestimmtes Thema
+// gebunden, sondern ein reines Werkzeug für die beiden Zeiträume, die der
+// Tagesplan-Algorithmus selbst schon als Rhythmus verwendet (SESSION_LEN=90
+// Minuten Fach-Sitzung, bis zu 20 Minuten Pause danach, siehe
+// buildStudyChunks()/placeChunks()). Zeitstempel-basiert (endAt statt eines
+// laufenden Zählers), damit die Restzeit auch nach Schliessen/Neuladen der
+// Seite korrekt bleibt.
+let quickTimer=JSON.parse(localStorage.getItem('lt-quick-timer')||'null'); // {mode:'focus'|'break', endAt}
+let _quickTimerInterval=null;
+
+function saveQuickTimer(){ localStorage.setItem('lt-quick-timer', JSON.stringify(quickTimer)); }
+
+function startQuickTimer(mode){
+  const mins = mode==='focus' ? 90 : 20;
+  quickTimer={mode, endAt:Date.now()+mins*60000};
+  saveQuickTimer();
+  clearInterval(_quickTimerInterval);
+  _quickTimerInterval=setInterval(tickQuickTimer, 1000);
+  renderQuickTimer();
+}
+function cancelQuickTimer(){
+  quickTimer=null;
+  saveQuickTimer();
+  clearInterval(_quickTimerInterval);
+  renderQuickTimer();
+}
+// Läuft die Zeit ab, gibt's eine kurze Toast-Meldung (siehe showToast() oben)
+// statt eines Alarmtons — kein Autoplay-Audio, das der Browser ohnehin oft
+// blockiert, bevor die Seite eine echte Nutzerinteraktion hatte.
+function tickQuickTimer(){
+  if(!quickTimer){ clearInterval(_quickTimerInterval); return; }
+  if(Date.now()>=quickTimer.endAt){
+    const wasMode=quickTimer.mode;
+    quickTimer=null;
+    saveQuickTimer();
+    clearInterval(_quickTimerInterval);
+    showToast(wasMode==='focus' ? '🔔 90 Minuten Fokus geschafft — Zeit für eine Pause!' : '🔔 Pause vorbei — weiter geht\'s!');
+    renderQuickTimer();
+    return;
+  }
+  renderQuickTimer();
+}
+function renderQuickTimer(){
+  const el=document.getElementById('quick-timer');
+  if(!el) return;
+  if(!quickTimer){
+    el.innerHTML=`<div class="timer-actions" style="margin-top:0">
+      <button class="mg-btn-save" style="flex:1" onclick="startQuickTimer('focus')">▶ 90 Min Fokus</button>
+      <button class="mg-btn-cancel" style="flex:1" onclick="startQuickTimer('break')">▶ 20 Min Pause</button>
+    </div>`;
+    return;
+  }
+  const remainMs=Math.max(0, quickTimer.endAt-Date.now());
+  const mm=String(Math.floor(remainMs/60000)).padStart(2,'0');
+  const ss=String(Math.floor((remainMs%60000)/1000)).padStart(2,'0');
+  const isFocus=quickTimer.mode==='focus';
+  const col=isFocus?'#007aff':'#ff9500';
+  el.innerHTML=`<div class="timer-card" style="border-color:${col}">
+    <div class="timer-top">
+      <span class="timer-name">${isFocus?'🎯 Fokus':'☕ Pause'}</span>
+      <span class="timer-clock" style="color:${col}">${mm}:${ss}</span>
+    </div>
+    <div class="timer-actions">
+      <button class="mg-btn-cancel" style="flex:1" onclick="cancelQuickTimer()">✕ Abbrechen</button>
+    </div>
+  </div>`;
+}
+
 // Öffnet das Tagesplan-Modal: Start-/Ende-Eingaben vorbelegen, Termin-Bereich +
 // den Plan selbst neu zeichnen.
 function openPlan(){
@@ -2079,10 +2157,17 @@ function openPlan(){
   renderMealsSection();
   renderApptSection();
   setPlanView('adapted');
+  renderQuickTimer();
+  clearInterval(_quickTimerInterval);
+  if(quickTimer) _quickTimerInterval=setInterval(tickQuickTimer, 1000);
   document.getElementById('plan-bg').classList.add('open');
   document.body.style.overflow='hidden';
 }
-function closePlan(){ document.getElementById('plan-bg').classList.remove('open'); document.body.style.overflow=''; }
+function closePlan(){
+  document.getElementById('plan-bg').classList.remove('open');
+  document.body.style.overflow='';
+  clearInterval(_quickTimerInterval);
+}
 function planBgClick(e){ if(e.target===document.getElementById('plan-bg')) closePlan(); }
 
 // ── Statistik ─────────────────────────────────────────────────────────────────
