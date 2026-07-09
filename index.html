@@ -2446,9 +2446,23 @@ function renderPlanGrid(entries, prefs){
     } else if(e.type==='review'){
       bg='#dbeafe'; tx='#1e40af'; label='🔄 Wiederholung ('+e.topics.length+')';
     } else continue;
+    // .grid-block hat overflow:hidden (siehe CSS) — verhindert zwar, dass
+    // Inhalt optisch in den nächsten Block überläuft, aber bei sehr kurzen
+    // Blöcken (<~28px, z.B. eine 10min-Pause ohne Lücke zum nächsten Eintrag,
+    // siehe height-Berechnung oben) passt die normale Zwei-Zeilen-Aufteilung
+    // (Zeit + Name) nicht mehr rein — der Name wird dann komplett weg-
+    // geschnitten, unsichtbar, statt sichtbar zu bleiben (Nutzer-Screenshot
+    // 2026-07-09, nach dem vorherigen Overlap-Fix neu aufgefallen). Für
+    // solche Blöcke eine einzeilige, kompakte Variante (Zeit+Name zusammen)
+    // statt der Zwei-Zeilen-Aufteilung — der volle Titel bleibt zusätzlich
+    // im title-Tooltip verfügbar.
+    const compact=height<28;
+    const bodyHtml=compact
+      ? `<div class="grid-block-name">${fmtTime(e.time)} · ${label}</div>`
+      : `<div class="grid-block-time">${fmtTime(e.time)}–${fmtTime(e.time+dur)}</div>
+      <div class="grid-block-name">${label}</div>`;
     blocksHtml+=`<div class="grid-block ${cls}" style="top:${top}px;height:${height}px;background:${bg};color:${tx}" title="${label} · ${fmtTime(e.time)}–${fmtTime(e.time+dur)}">
-      <div class="grid-block-time">${fmtTime(e.time)}–${fmtTime(e.time+dur)}</div>
-      <div class="grid-block-name">${label}</div>
+      ${bodyHtml}
     </div>`;
   }
 
