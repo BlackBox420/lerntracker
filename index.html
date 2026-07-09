@@ -480,6 +480,15 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 //            wie viele Karten pro Thema existieren. Rein manuell gepflegt, siehe
 //            logCardSession()/cardMasteryPct() im Score-Abschnitt — es gibt keine
 //            echte Anbindung an die Karteikarten-Apps selbst.
+// EXAMSIMS:  [{id, subj, title, durationMin, done, scorePct, doneDate}]
+//            Prüfungssimulationen (alte Klausuren als Probelauf): pro Fach frei
+//            anlegbar, daher automatisch nur für die Fächer verfügbar, die welche
+//            eingetragen haben (z.B. OC/IC/BC) — kein globaler Pool. Offene
+//            (done=false) reservieren einen Block im Tagesplan (generateSchedule()),
+//            mehrere gleichzeitig offene Simulationen (auch fachübergreifend)
+//            erscheinen alle am selben Tag. Nach Abschluss liefert scorePct (0-100,
+//            per prompt() abgefragt) den Rückschluss auf den Stand, siehe
+//            renderStatsView().
 
 // Farbpalette für neu angelegte Fächer: wird der Reihe nach durchgereicht
 // (siehe mgSaveSubject), damit jedes Fach automatisch eine eigene, zum Rest der
@@ -606,6 +615,7 @@ const SEED_TOPICS = [
 let SUBJECTS = JSON.parse(localStorage.getItem('lt-subjects')||JSON.stringify(SEED_SUBJECTS));
 let TOPICS   = JSON.parse(localStorage.getItem('lt-topics')||JSON.stringify(SEED_TOPICS));
 let CARDSETS = JSON.parse(localStorage.getItem('lt-cardsets')||'[]');
+let EXAMSIMS = JSON.parse(localStorage.getItem('lt-examsims')||'[]');
 
 // Einmalige Migration von der alten Version dieser App (feste SUBJECTS/TOPICS im
 // Code statt in localStorage, kein "Verwalten"). Läuft nur genau einmal, beim
@@ -682,6 +692,7 @@ function saveCP(sync=true){ localStorage.setItem('lt-cp',JSON.stringify(cardProg
 function saveSubjects(sync=true){ localStorage.setItem('lt-subjects',JSON.stringify(SUBJECTS)); rebuildMaps(); if(sync) debouncedPush(); }
 function saveTopics(sync=true){ localStorage.setItem('lt-topics',JSON.stringify(TOPICS)); rebuildMaps(); if(sync) debouncedPush(); }
 function saveCardsets(sync=true){ localStorage.setItem('lt-cardsets',JSON.stringify(CARDSETS)); if(sync) debouncedPush(); }
+function saveExamSims(sync=true){ localStorage.setItem('lt-examsims',JSON.stringify(EXAMSIMS)); if(sync) debouncedPush(); }
 
 // Räumt verwaiste Fortschritts-/Wiederholungsdaten auf, wenn ein Thema bzw. ein
 // ganzes Fach gelöscht wird (aufgerufen aus mgDeleteTopic/mgDeleteSubject).
@@ -694,7 +705,8 @@ function purgeSubjectData(sid){
   TOPICS.filter(t=>t.subj===sid).forEach(t=>{ delete progress[t.id]; delete lastReview[t.id]; delete halfLife[t.id]; delete cardProgress[t.id]; });
   delete motivation[sid];
   CARDSETS = CARDSETS.filter(cs=>cs.subj!==sid);
-  saveP(false); saveR(false); saveHL(false); saveCP(false); saveM(false); saveCardsets();
+  EXAMSIMS = EXAMSIMS.filter(e=>e.subj!==sid);
+  saveP(false); saveR(false); saveHL(false); saveCP(false); saveM(false); saveCardsets(false); saveExamSims();
 }
 
 // 'YYYY-MM-DD' aus den LOKALEN Datumsanteilen eines Date-Objekts. Bewusst nicht
@@ -984,16 +996,39 @@ function saveHistory(sync=true){
 }
 function todayHistoryEntry(){
   const d=todayStr();
-  if(!HISTORY[d]) HISTORY[d]={reviewsDue:0, reviewsDone:[], subjPct:{}};
+  if(!HISTORY[d]) HISTORY[d]={reviewsDue:0, reviewsDone:[], subjPct:{}, drills:{}};
   const e=HISTORY[d];
   if(!e.reviewsDone) e.reviewsDone=[];
   if(!e.subjPct) e.subjPct={};
+  if(!e.drills) e.drills={};
   return e;
 }
 function logReviewDone(topicId){
   const e=todayHistoryEntry();
   if(!e.reviewsDone.includes(topicId)) e.reviewsDone.push(topicId);
   saveHistory(false);
+}
+
+// ── Tages-Reminder (z.B. "Spektrenanalyse") ─────────────────────────────────
+// Pro Fach optional ein freier Reminder-Text (SUBJECTS[].dailyDrillLabel, siehe
+// mgSubjectForm) — falls gesetzt, fragt renderDayCard() täglich einmal danach.
+// Richtung (vorwärts/rückwärts) ist rein informativ fürs eigene Auge, beide
+// zählen gleichermaßen als "heute erledigt"; im HISTORY-Tageseintrag unter
+// drills[subjId] gespeichert, analog zu reviewsDone.
+function getDrillDoneToday(subjId){
+  return todayHistoryEntry().drills[subjId]||null;
+}
+function logDrillDone(subjId, direction){
+  const e=todayHistoryEntry();
+  e.drills[subjId]=direction;
+  saveHistory(false);
+  renderDayCard();
+}
+function undoDrill(subjId){
+  const e=todayHistoryEntry();
+  delete e.drills[subjId];
+  saveHistory(false);
+  renderDayCard();
 }
 function unlogReviewDone(topicId){
   const e=todayHistoryEntry();
@@ -1254,6 +1289,33 @@ function renderDayCard(){
     ${recap.due>0?`<span>Diese Woche: ${recap.done}/${recap.due} wiederholt</span>`:''}
   </div>`:'';
 
+  // Tages-Reminder (z.B. "Spektrenanalyse", siehe SUBJECTS[].dailyDrillLabel):
+  // pro Fach mit gesetztem Reminder-Text ein Eintrag, solange heute noch nichts
+  // geloggt wurde. Richtung (vorwärts/rückwärts) ist rein informativ — beide
+  // zählen gleich als "heute erledigt", siehe getDrillDoneToday()/logDrillDone().
+  // Bereits erledigte werden als Haken + Rückgängig-Link gezeigt statt komplett
+  // zu verschwinden, damit ein versehentlicher Klick korrigierbar bleibt.
+  const drillSubjects=SUBJECTS.filter(s=>s.dailyDrillLabel);
+  const drillHtml=drillSubjects.length===0?'':`<div class="day-divider"></div>
+    <div class="day-section-title">🔬 Tages-Reminder</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${drillSubjects.map(s=>{
+        const done=getDrillDoneToday(s.id);
+        return done
+          ? `<div style="font-size:12px;color:rgba(255,255,255,.7);display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+               <span style="background:${s.bg};color:${s.tx};padding:1px 5px;border-radius:3px;font-size:9px">${esc(s.short)}</span>
+               ✓ ${esc(s.dailyDrillLabel)} (${done==='vorwaerts'?'vorwärts':'rückwärts'}) erledigt
+               <a href="#" onclick="undoDrill('${s.id}');return false" style="color:rgba(255,255,255,.4);font-size:10px">rückgängig</a>
+             </div>`
+          : `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+               <span style="background:${s.bg};color:${s.tx};padding:1px 5px;border-radius:3px;font-size:9px">${esc(s.short)}</span>
+               <span style="font-size:12px;color:#fff">${esc(s.dailyDrillLabel)} heute?</span>
+               <button class="rev-chip" style="border-color:${s.color};color:#fff" onclick="logDrillDone('${s.id}','vorwaerts')">→ Vorwärts</button>
+               <button class="rev-chip" style="border-color:${s.color};color:#fff" onclick="logDrillDone('${s.id}','rueckwaerts')">← Rückwärts</button>
+             </div>`;
+      }).join('')}
+    </div>`;
+
   document.getElementById('day-card').innerHTML=`<div class="day-card">
     ${streakHtml}
     <div class="day-section-title">🔄 Heute wiederholen</div>
@@ -1261,6 +1323,7 @@ function renderDayCard(){
     <div class="day-divider"></div>
     <div class="day-section-title">🎯 Fokus jetzt</div>
     ${learnHtml}
+    ${drillHtml}
   </div>`;
 }
 
@@ -1798,6 +1861,13 @@ function estimatedCardMinutesPerDay(){
   return CARDSETS.reduce((sum,cs)=>sum+(cs.newPerDay||0),0);
 }
 
+// Alle noch offenen (nicht abgeschlossenen) Prüfungssimulationen, fachübergreifend
+// — reserviert je einen Block im Tagesplan (siehe generateSchedule()), solange sie
+// nicht über mgExamSimBlock()/toggleExamSimDone() als erledigt markiert wurden.
+function openPendingExamSims(){
+  return EXAMSIMS.filter(e=>!e.done);
+}
+
 // Baut den Tagesplan als flache Liste von "entries" (in zeitlicher Reihenfolge),
 // die renderPlanGrid() später als Kalenderblöcke zeichnet und planToText() als
 // Text exportiert. Jeder Eintrag hat mindestens {type, time} (Minuten seit
@@ -1949,10 +2019,26 @@ function generateSchedule(){
   const mealBlocks=Object.entries(prefs.meals)
     .filter(([,m])=>m.enabled)
     .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key]}));
+  // Offene Prüfungssimulationen (siehe openPendingExamSims()) reservieren direkt
+  // nach der Karteikarten-Zeit hintereinander je einen eigenen Zeitabschnitt —
+  // mehrere gleichzeitig offene, auch über verschiedene Fächer hinweg, addieren
+  // sich so zu einer zusammenhängenden Gesamtdauer. mergeIntervals() verschmilzt
+  // direkt aneinandergrenzende Blöcke zu einem einzigen Kalender-Eintrag mit
+  // zusammengesetztem Label (z.B. "🎓 OC: HS23 + 🎓 BC: Musterklausur") — exakt
+  // dasselbe Verhalten wie bei Vorlesung direkt gefolgt von Übung, siehe
+  // mergeIntervals() weiter oben. Titel und Gesamtdauer bleiben dabei erhalten,
+  // nur optisch wird daraus ein Block statt mehrerer.
+  let examCursor=prefs.start+cardMin;
+  const examBlocks=openPendingExamSims().map(e=>{
+    const blk={start:examCursor, end:examCursor+e.durationMin, label:`🎓 ${S_MAP[e.subj].short}: ${e.title}`};
+    examCursor+=e.durationMin;
+    return blk;
+  });
   const fixedRaw=mergeIntervals([
     ...appts.map(a=>({...a, label:'📌 '+a.label})),
     ...mealBlocks,
-    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[])
+    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[]),
+    ...examBlocks
   ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
   // renderPlanGrid() hebt Blöcke unter ~16min optisch auf eine Mindesthöhe
   // (18px), damit Zeit+Label lesbar bleiben — ohne eine entsprechende
@@ -2304,6 +2390,12 @@ function renderStatsView(){
     // Bereitschafts-Score (siehe subjectReadiness() oben) — rein anzeigend.
     const readiness=subjectReadiness(sid);
     const readinessHtml = readiness===null ? '' : `<span class="readiness-badge" title="Bereitschaft: Fortschritt, Pensum-Druck und Wiederholungs-Frische kombiniert">${progressRing(readiness,readinessColor(readiness),16)}<b style="color:${readinessColor(readiness)}">${readiness}%</b></span>`;
+    // Prüfungssimulationen (siehe EXAMSIMS oben): erledigt/gesamt + Ø-Punktzahl
+    // als Rückschluss auf den Stand — nur, wenn für dieses Fach überhaupt welche
+    // angelegt wurden (siehe mgExamSimForm() in "Verwalten").
+    const sims=EXAMSIMS.filter(e=>e.subj===sid);
+    const simsDone=sims.filter(e=>e.done);
+    const simsHtml=sims.length===0?'':`<div style="font-size:11px;color:var(--txt2);margin:2px 0 6px">🎓 Prüfungssimulationen: ${simsDone.length}/${sims.length} erledigt${simsDone.length>0?` · Ø ${Math.round(simsDone.reduce((a,e)=>a+e.scorePct,0)/simsDone.length)}%`:''}</div>`;
     const rows=topics.map(t=>{
       const pct=getPct(t.id);
       const col=pct>=80?'#34c759':pct>=50?'#ff9500':'#ff3b30';
@@ -2329,6 +2421,7 @@ function renderStatsView(){
         <span class="stats-subj-avg">${avg}% ø · ${done80}/${topics.length} ≥80% · ${d}d${trendHtml}</span>
       </div>
       ${sparkHtml}
+      ${simsHtml}
       ${rows}
     </div>`;
   }).join('');
@@ -2370,7 +2463,7 @@ function fbPush(){
   if(!_fbRef) return;
   const ts=Date.now();
   localStorage.setItem('lt-ts',ts);
-  _fbRef.set({p:progress,m:motivation,r:lastReview,hl:halfLife,cp:cardProgress,s:SUBJECTS,t:TOPICS,cs:CARDSETS,ts})
+  _fbRef.set({p:progress,m:motivation,r:lastReview,hl:halfLife,cp:cardProgress,s:SUBJECTS,t:TOPICS,cs:CARDSETS,es:EXAMSIMS,hi:HISTORY,ts})
     .then(()=>syncStatus('↑ Sync '+new Date().toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'}),true))
     .catch(e=>syncStatus('✗ '+e.code,false));
 }
@@ -2415,6 +2508,8 @@ function _connectSync(key){
       if(data.s){SUBJECTS=data.s;saveSubjects(false);}
       if(data.t){TOPICS=data.t;saveTopics(false);}
       if(data.cs){CARDSETS=data.cs;saveCardsets(false);}
+      if(data.es){EXAMSIMS=data.es;saveExamSims(false);}
+      if(data.hi){HISTORY=data.hi;saveHistory(false);}
       updateOnboardingState();
       renderExamBar(); renderDayCard(); renderFilterBar(); renderTopicList(); renderManage();
       if(activeTab==='cards') renderCardsView();
@@ -2472,7 +2567,7 @@ function toggleSyncHelp(){
 // ohne Cloud-Account.
 
 function exportData(){
-  const data=JSON.stringify({p:progress,m:motivation,r:lastReview,hl:halfLife,cp:cardProgress,s:SUBJECTS,t:TOPICS,cs:CARDSETS,v:5});
+  const data=JSON.stringify({p:progress,m:motivation,r:lastReview,hl:halfLife,cp:cardProgress,s:SUBJECTS,t:TOPICS,cs:CARDSETS,es:EXAMSIMS,hi:HISTORY,v:6});
   navigator.clipboard.writeText(data).then(()=>{
     const btn=document.getElementById('export-btn');
     btn.textContent='✓ Kopiert!'; btn.classList.add('copy-ok');
@@ -2494,6 +2589,8 @@ function importData(){
     if(data.s){SUBJECTS=data.s;saveSubjects();}
     if(data.t){TOPICS=data.t;saveTopics();}
     if(data.cs){CARDSETS=data.cs;saveCardsets();}
+    if(data.es){EXAMSIMS=data.es;saveExamSims();}
+    if(data.hi){HISTORY=data.hi;saveHistory();}
     closeModal();
     updateOnboardingState();
     renderExamBar(); renderDayCard(); renderFilterBar(); renderTopicList(); renderManage();
@@ -2519,9 +2616,9 @@ function importData(){
 // mgState hält, welches Formular gerade offen ist (es ist immer höchstens eines
 // gleichzeitig offen: entweder "neues Fach", "Fach X bearbeiten", "neues Thema
 // zu Fach Y" oder "Thema Z bearbeiten").
-let mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null, editCardsetFor:null };
+let mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null, editCardsetFor:null, addExamSimFor:null, editExamSimFor:null };
 
-function mgResetForms(){ mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null, editCardsetFor:null }; }
+function mgResetForms(){ mgState = { newSubjectOpen:false, editSubject:null, addTopicFor:null, editTopic:null, addCardsetFor:null, editCardsetFor:null, addExamSimFor:null, editExamSimFor:null }; }
 
 // Liefert den Container, aus dem gerade tatsächlich gelesen/in den geschrieben
 // werden soll (siehe Erklärung oben): das Verwalten-Modal, falls es gerade offen
@@ -2617,6 +2714,10 @@ function mgSubjectForm(s){
     <div class="mg-check-row">
       <input type="checkbox" id="mg-s-nomem" ${s&&needsNoMemorization(s)?'checked':''}>
       <label for="mg-s-nomem">Kein Auswendiglernen nötig (keine Wiederholungs-Erinnerungen)</label>
+    </div>
+    <div class="mg-field">
+      <label>Täglicher Reminder (optional, z.B. "Spektrenanalyse")</label>
+      <input type="text" id="mg-s-drill" value="${s?esc(s.dailyDrillLabel||''):''}" placeholder="leer lassen = kein Reminder">
     </div>
     <div class="mg-form-actions">
       <button class="mg-btn-cancel" onclick="mgCancel()">Abbrechen</button>
@@ -2734,6 +2835,7 @@ function mgCardsetBlock(cs){
 function mgSubjectCard(s){
   const topics=TOPICS.filter(t=>t.subj===s.id);
   const cardsets=CARDSETS.filter(cs=>cs.subj===s.id);
+  const examSims=EXAMSIMS.filter(e=>e.subj===s.id);
   const d=Math.ceil(daysUntil(s.examDate));
   const dateStr=new Date(s.examDate+'T12:00:00').toLocaleDateString('de-CH',{day:'numeric',month:'short',year:'numeric'});
   const editing=mgState.editSubject===s.id;
@@ -2757,6 +2859,10 @@ function mgSubjectCard(s){
     <div class="mg-topics">
       ${cardsets.map(cs=>mgCardsetBlock(cs)).join('')}
       ${mgState.addCardsetFor===s.id?mgCardsetForm(s.id):`<button class="mg-add-topic" onclick="mgOpenAddCardset('${s.id}')">+ Karteikarten-Set hinzufügen</button>`}
+    </div>
+    <div class="mg-topics">
+      ${examSims.map(e=>mgExamSimBlock(e)).join('')}
+      ${mgState.addExamSimFor===s.id?mgExamSimForm(s.id):`<button class="mg-add-topic" onclick="mgOpenAddExamSim('${s.id}')">+ Prüfungssimulation hinzufügen</button>`}
     </div>
   </div>`;
 }
@@ -2821,6 +2927,92 @@ function mgDeleteCardset(id){
   saveCardsets();
   refreshAll();
 }
+
+// ── Prüfungssimulationen (alte Klausuren als Probelauf) ─────────────────────
+// Formular "Prüfungssimulation anlegen/bearbeiten": Titel (z.B. "HS23") +
+// Blockdauer in Minuten fürs Reservieren im Tagesplan. Analog zu mgCardsetForm().
+function mgExamSimForm(subjId, sim){
+  return `<div class="mg-form">
+    <div class="mg-field">
+      <label>Titel</label>
+      <input type="text" id="mg-es-title" value="${sim?esc(sim.title):''}" placeholder="z.B. HS23 oder Musterklausur 2">
+    </div>
+    <div class="mg-field">
+      <label>Dauer (Minuten)</label>
+      <input type="number" id="mg-es-duration" min="15" step="15" value="${sim?sim.durationMin:120}">
+    </div>
+    <div class="mg-form-actions">
+      <button class="mg-btn-cancel" onclick="mgCancel()">Abbrechen</button>
+      <button class="mg-btn-save" onclick="mgSaveExamSim('${subjId}',${sim?`'${sim.id}'`:'null'})">Speichern</button>
+    </div>
+  </div>`;
+}
+
+// Eine Zeile pro Prüfungssimulation: Titel + Dauer, Status (offen -> reserviert
+// einen Block im Tagesplan, siehe generateSchedule(); erledigt -> zeigt die per
+// toggleExamSimDone() eingetragene Punktzahl in %) + Bearbeiten/Löschen.
+function mgExamSimBlock(sim){
+  const editing=mgState.editExamSimFor===sim.id;
+  const statusHtml=sim.done
+    ? `<span style="color:#34c759;font-weight:600">✓ ${sim.scorePct}%</span>`
+    : `<span style="color:var(--txt2)">offen · ${sim.durationMin} min</span>`;
+  return `<div class="mg-topic-row">
+    <div class="mg-topic-body">
+      <div class="mg-topic-name">🎓 ${esc(sim.title)}</div>
+      <div class="mg-topic-grp">${statusHtml}</div>
+    </div>
+    <button class="mg-icon-btn" onclick="toggleExamSimDone('${sim.id}')">${sim.done?'↩':'✓'}</button>
+    <button class="mg-icon-btn" onclick="mgOpenEditExamSim('${sim.id}')">✏️</button>
+    <button class="mg-icon-btn" onclick="mgDeleteExamSim('${sim.id}')">🗑</button>
+  </div>
+  ${editing?mgExamSimForm(sim.subj,sim):''}`;
+}
+function mgOpenAddExamSim(subjId){ mgResetForms(); mgState.addExamSimFor=subjId; renderManage(); }
+function mgOpenEditExamSim(id){ mgResetForms(); mgState.editExamSimFor=id; renderManage(); }
+function mgSaveExamSim(subjId, id){
+  const c=mgActiveContainer();
+  const title=(c.querySelector('#mg-es-title').value||'').trim();
+  if(!title){ alert('Bitte einen Titel eingeben.'); return; }
+  const durationMin=Math.max(15,parseInt(c.querySelector('#mg-es-duration').value)||120);
+  if(id){
+    Object.assign(EXAMSIMS.find(e=>e.id===id),{title,durationMin});
+  } else {
+    EXAMSIMS.push({id:genId('es'), subj:subjId, title, durationMin, done:false, scorePct:null, doneDate:null});
+  }
+  saveExamSims();
+  mgResetForms();
+  refreshAll();
+}
+function mgDeleteExamSim(id){
+  if(!confirm('Prüfungssimulation wirklich löschen?')) return;
+  EXAMSIMS=EXAMSIMS.filter(e=>e.id!==id);
+  saveExamSims();
+  refreshAll();
+}
+// Häkchen an einer Prüfungssimulation: beim Abschließen wird die erreichte
+// Punktzahl in % abgefragt (prompt(), analog zu pauseTopic()'s Grund-Eingabe —
+// spart eine eigene Modal-UI nur für dieses eine Zahlenfeld). Erneutes Antippen
+// setzt sie mit Rückfrage wieder auf "offen" zurück (z.B. um sie erneut zu
+// versuchen), die vorherige Punktzahl geht dabei bewusst verloren statt nur
+// versteckt zu werden — sonst könnte "offen" und "hat trotzdem einen alten
+// Score" widersprüchlich nebeneinander stehenbleiben.
+function toggleExamSimDone(id){
+  const sim=EXAMSIMS.find(e=>e.id===id);
+  if(!sim) return;
+  if(sim.done){
+    if(!confirm('Als "offen" zurücksetzen? Die eingetragene Punktzahl geht dabei verloren.')) return;
+    sim.done=false; sim.scorePct=null; sim.doneDate=null;
+  } else {
+    const raw=prompt('Erreichte Punktzahl in % (0-100):');
+    if(raw===null) return; // abgebrochen
+    sim.done=true;
+    sim.scorePct=Math.max(0,Math.min(100,parseInt(raw)||0));
+    sim.doneDate=todayStr();
+  }
+  saveExamSims();
+  refreshAll();
+}
+
 function mgCancel(){ mgResetForms(); renderManage(); }
 
 // Speichert das Fach-Formular: id=null -> neues Fach anlegen (bekommt automatisch
@@ -2838,11 +3030,12 @@ function mgSaveSubject(id){
   const openBook=c.querySelector('#mg-s-ob').checked;
   const lowEffort=c.querySelector('#mg-s-loweffort').checked;
   const noMemorize=c.querySelector('#mg-s-nomem').checked;
+  const dailyDrillLabel=(c.querySelector('#mg-s-drill').value||'').trim();
   if(id){
-    Object.assign(S_MAP[id],{name,short,examDate,openBook,lowEffort,noMemorize});
+    Object.assign(S_MAP[id],{name,short,examDate,openBook,lowEffort,noMemorize,dailyDrillLabel});
   } else {
     const pal=PALETTE[SUBJECTS.length%PALETTE.length];
-    SUBJECTS.push({id:genId('s'),name,short,examDate,openBook,lowEffort,noMemorize,...pal});
+    SUBJECTS.push({id:genId('s'),name,short,examDate,openBook,lowEffort,noMemorize,dailyDrillLabel,...pal});
   }
   saveSubjects();
   mgResetForms();
