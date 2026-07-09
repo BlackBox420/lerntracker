@@ -2093,6 +2093,12 @@ let _quickTimerInterval=null;
 function saveQuickTimer(){ localStorage.setItem('lt-quick-timer', JSON.stringify(quickTimer)); }
 
 function startQuickTimer(mode){
+  // Berechtigungs-Abfrage bewusst hier (Klick auf Start-Button) statt beim
+  // App-Start — Browser blocken/ignorieren Anfragen ohne echte Nutzer-Geste,
+  // und ein Prompt direkt beim Laden wäre auch aufdringlich ohne Kontext.
+  if('Notification' in window && Notification.permission==='default'){
+    Notification.requestPermission();
+  }
   const mins = mode==='focus' ? 90 : 20;
   quickTimer={mode, endAt:Date.now()+mins*60000};
   saveQuickTimer();
@@ -2117,10 +2123,29 @@ function tickQuickTimer(){
     saveQuickTimer();
     clearInterval(_quickTimerInterval);
     showToast(wasMode==='focus' ? '🔔 90 Minuten Fokus geschafft — Zeit für eine Pause!' : '🔔 Pause vorbei — weiter geht\'s!');
+    notifyTimerDone(wasMode);
     renderQuickTimer();
     return;
   }
   renderQuickTimer();
+}
+// Zusätzlich zum Toast (der nur sichtbar ist, solange der Tab im Vordergrund
+// ist) eine System-Benachrichtigung — die kommt auch durch, wenn zwischen-
+// zeitlich zu einer anderen App gewechselt wurde. Läuft über den Service
+// Worker statt new Notification() direkt, weil das auf Android/Chrome
+// zuverlässiger ist (dort schlägt der direkte Konstruktor oft fehl). Setzt
+// weiterhin voraus, dass der Tab/die installierte PWA im Hintergrund noch
+// läuft — ganz geschlossen ginge nur mit echtem Push von einem Server, den
+// es hier bewusst nicht gibt (kein Backend).
+function notifyTimerDone(mode){
+  if(!('Notification' in window) || Notification.permission!=='granted') return;
+  const body = mode==='focus' ? '🔔 90 Minuten Fokus geschafft — Zeit für eine Pause!' : '🔔 Pause vorbei — weiter geht\'s!';
+  const show=reg=>reg.showNotification('Lernplan', {body, icon:'icon.svg', tag:'lt-quick-timer'});
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.ready.then(show).catch(()=>{});
+  } else {
+    try{ new Notification('Lernplan', {body}); }catch(e){}
+  }
 }
 function renderQuickTimer(){
   const el=document.getElementById('quick-timer');
