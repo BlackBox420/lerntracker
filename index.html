@@ -1764,9 +1764,9 @@ function estimateDur(t){
 function toMin(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
 
 const MEAL_DEFAULTS = {
-  breakfast: {enabled:false, time:420,  dur:20},
-  lunch:     {enabled:true,  time:750,  dur:60},
-  dinner:    {enabled:true,  time:1140, dur:30},
+  breakfast: {enabled:false, start:420,  end:440},
+  lunch:     {enabled:true,  start:750,  end:810},
+  dinner:    {enabled:true,  start:1140, end:1170},
 };
 const MEAL_LABELS = {breakfast:'🍳 Frühstück', lunch:'🍽️ Mittagspause', dinner:'🍽️ Abendbrot'};
 
@@ -1804,12 +1804,29 @@ function getDayPrefs(dateStr){
       start: raw.start??420, end: raw.end??1260,
       meals: {
         breakfast: {...MEAL_DEFAULTS.breakfast},
-        lunch:     {enabled:true, time: raw.lunch??MEAL_DEFAULTS.lunch.time, dur:60},
-        dinner:    {enabled:true, time: raw.dinner??MEAL_DEFAULTS.dinner.time, dur:30},
+        lunch:     {enabled:true, start: raw.lunch??MEAL_DEFAULTS.lunch.start, end: (raw.lunch??MEAL_DEFAULTS.lunch.start)+60},
+        dinner:    {enabled:true, start: raw.dinner??MEAL_DEFAULTS.dinner.start, end: (raw.dinner??MEAL_DEFAULTS.dinner.start)+30},
       }
     };
   }
+  _migrateMealShapeIfNeeded(raw.meals);
   return raw;
+}
+// Migriert das alte {time, dur}-Format einer einzelnen Mahlzeit (nur
+// Startzeit + fixe Dauer, keine eigene Endzeit editierbar) auf das neue
+// {start, end}-Format (Nutzer-Wunsch 2026-07-10: auch die Endzeit soll frei
+// wählbar sein, z.B. für eine längere Mittagspause). Mutiert `meals` in-place,
+// die nächste saveDayPrefs()-Runde persistiert das neue Format automatisch.
+function _migrateMealShapeIfNeeded(meals){
+  for(const key of Object.keys(meals)){
+    const m=meals[key];
+    if(m && m.start===undefined && m.time!==undefined){
+      m.start=m.time;
+      m.end=m.time+(m.dur??(MEAL_DEFAULTS[key]?MEAL_DEFAULTS[key].end-MEAL_DEFAULTS[key].start:30));
+      delete m.time; delete m.dur;
+    }
+  }
+  return meals;
 }
 function saveDayPrefs(dateStr, p){
   dateStr=dateStr||todayStr();
@@ -1857,29 +1874,46 @@ function effectiveDayPrefs(dayOffset){
   return nowMin>prefs.start ? {...prefs, start:nowMin} : prefs;
 }
 
-// Checkbox "Mahlzeit an/aus" bzw. Uhrzeit-Eingabe im Tagesplan-Modal.
+// Checkbox "Mahlzeit an/aus" bzw. Start-/Ende-Uhrzeit-Eingabe im Tagesplan-Modal.
 function toggleMealEnabled(key, enabled){
   const p=getDayPrefs(currentPlanDateStr());
   p.meals[key].enabled=enabled;
   saveDayPrefs(currentPlanDateStr(), p);
-  // Zeit-Eingabefeld muss beim Umschalten mit-aktualisiert werden (disabled-
-  // Zustand hängt an m.enabled), sonst bliebe es nach dem Anhaken weiter
+  // Zeit-Eingabefelder müssen beim Umschalten mit-aktualisiert werden (disabled-
+  // Zustand hängt an m.enabled), sonst blieben sie nach dem Anhaken weiter
   // ausgegraut, obwohl die Checkbox selbst schon aktiv ist.
-  const timeEl=document.getElementById('meal-time-'+key);
-  if(timeEl) timeEl.disabled=!enabled;
+  const startEl=document.getElementById('meal-start-'+key);
+  const endEl=document.getElementById('meal-end-'+key);
+  if(startEl) startEl.disabled=!enabled;
+  if(endEl) endEl.disabled=!enabled;
   renderPlan();
 }
-function saveMealTime(key, hhmm){
+// Start-/Ende-Zeit einer Mahlzeit einzeln editierbar (Nutzer-Wunsch
+// 2026-07-10: bisher gab es nur eine Startzeit + fixe Dauer pro Mahlzeitstyp,
+// jetzt lässt sich z.B. eine längere oder kürzere Pause frei einstellen).
+// Analog zu saveDayStart()/saveDayEnd(): validiert, dass Beginn vor Ende liegt.
+function saveMealStart(key, hhmm){
   if(!hhmm) return;
   const p=getDayPrefs(currentPlanDateStr());
-  p.meals[key].time=toMin(hhmm);
+  const newStart=toMin(hhmm);
+  if(newStart>=p.meals[key].end){ alert('Beginn muss vor dem Ende liegen.'); document.getElementById('meal-start-'+key).value=fmtTime(p.meals[key].start); return; }
+  p.meals[key].start=newStart;
+  saveDayPrefs(currentPlanDateStr(), p);
+  renderPlan();
+}
+function saveMealEnd(key, hhmm){
+  if(!hhmm) return;
+  const p=getDayPrefs(currentPlanDateStr());
+  const newEnd=toMin(hhmm);
+  if(newEnd<=p.meals[key].start){ alert('Ende muss nach dem Beginn liegen.'); document.getElementById('meal-end-'+key).value=fmtTime(p.meals[key].end); return; }
+  p.meals[key].end=newEnd;
   saveDayPrefs(currentPlanDateStr(), p);
   renderPlan();
 }
 
 // Baut die drei Mahlzeiten-Zeilen (Frühstück/Mittag-/Abendessen) im Tagesplan-
-// Modal: Checkbox zum An-/Abschalten + Uhrzeit-Eingabe, die nur bei
-// aktivierter Mahlzeit editierbar ist.
+// Modal: Checkbox zum An-/Abschalten + je eine Start- und Ende-Uhrzeit-Eingabe,
+// die nur bei aktivierter Mahlzeit editierbar sind.
 function renderMealsSection(){
   const el=document.getElementById('meals-section');
   if(!el) return;
@@ -1889,8 +1923,12 @@ function renderMealsSection(){
     return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
       <input type="checkbox" id="meal-en-${key}" ${m.enabled?'checked':''} onchange="toggleMealEnabled('${key}',this.checked)">
       <label for="meal-en-${key}" style="flex:1;font-size:12px;color:var(--txt)">${MEAL_LABELS[key]}</label>
-      <input type="time" id="meal-time-${key}" value="${fmtTime(m.time)}" ${m.enabled?'':'disabled'}
-        onchange="saveMealTime('${key}',this.value)"
+      <input type="time" id="meal-start-${key}" value="${fmtTime(m.start)}" ${m.enabled?'':'disabled'}
+        onchange="saveMealStart('${key}',this.value)"
+        style="padding:6px 8px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
+      <span style="font-size:12px;color:var(--txt3)">–</span>
+      <input type="time" id="meal-end-${key}" value="${fmtTime(m.end)}" ${m.enabled?'':'disabled'}
+        onchange="saveMealEnd('${key}',this.value)"
         style="padding:6px 8px;border-radius:8px;border:.5px solid var(--border);background:var(--bg2);color:var(--txt);font-size:12px">
     </div>`;
   }).join('');
@@ -2337,14 +2375,15 @@ function buildDayFrame(dayOffset){
   const cardMin=dayOffset===0 ? estimatedCardMinutesPerDay() : 0;
   // Mahlzeiten kommen jetzt aus prefs.meals statt fixer lunch/dinner-Werte —
   // jede der drei (Frühstück/Mittag-/Abendessen) ist einzeln an-/abschaltbar
-  // und hat eine selbst gewählte Uhrzeit (siehe renderMealsSection()). movable:
-  // true, im Gegensatz zu Terminen — siehe placeChunksFrame() für die Logik,
-  // die eine Mahlzeit ggf. um bis zu 30min nach hinten schiebt, damit sie nicht
-  // mitten in einer Lerneinheit ein zu kurzes Rest-Fragment abschneidet
-  // (Nutzer-Entscheidung 2026-07-10).
+  // und hat eine selbst gewählte Start- UND Ende-Uhrzeit (siehe
+  // renderMealsSection(); bis 2026-07-10 gab es nur eine feste Dauer ab einer
+  // wählbaren Startzeit). movable: true, im Gegensatz zu Terminen — siehe
+  // placeChunksFrame() für die Logik, die eine Mahlzeit ggf. um bis zu 30min
+  // nach hinten schiebt, damit sie nicht mitten in einer Lerneinheit ein zu
+  // kurzes Rest-Fragment abschneidet (Nutzer-Entscheidung 2026-07-10).
   const mealBlocks=Object.entries(prefs.meals)
     .filter(([,m])=>m.enabled)
-    .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key], movable:true}));
+    .map(([key,m])=>({start:m.start,end:m.end,label:MEAL_LABELS[key], movable:true}));
   // Prüfungssimulationen sind hier bewusst KEIN fixer Block mehr — sie rotieren
   // seit examSimScore() als virtuelle Themen mit echtem Lernstoff um Zeit
   // (siehe buildStudyChunks()), landen also je nach Priorität irgendwo in den
