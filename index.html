@@ -247,6 +247,12 @@ input[type=range].big::-moz-range-thumb{width:26px;height:26px}
 .grid-block-break{opacity:.55}
 .grid-block-appt{border:1.5px dashed rgba(0,0,0,.3)}
 @media(prefers-color-scheme:dark){.grid-block-appt{border-color:rgba(255,255,255,.3)}}
+/* Sehr kurze Blöcke (<~13min, siehe isMarker in renderPlanGrid()) haben
+   schlicht nicht genug Höhe für lesbaren Text, egal wie formatiert — statt
+   Überlappen oder unlesbar abgeschnittenem Text nur ein schmaler Farbstreifen
+   ohne eigenen Text, Details per title-Tooltip beim Hover (Nutzer-Entscheidung
+   2026-07-09). padding:0 statt der normalen 3px 7px, da kein Inhalt reinpasst. */
+.grid-block-marker{padding:0}
 
 /* Tab bar */
 .tab-bar{display:flex;gap:0;margin-bottom:14px;background:var(--bg2);border-radius:10px;padding:2px}
@@ -2421,21 +2427,25 @@ function renderPlanGrid(entries, prefs){
     const dur = e.type==='topic' ? e.t.dur : e.dur;
     if(!dur) continue;
     const top=(e.time-gridStart)*PXMIN;
-    // Mindesthöhe 18px, damit Zeit+Label bei sehr kurzen Blöcken (<~16min)
-    // noch lesbar bleiben — darf aber NIE über den Start des nächsten
-    // Eintrags hinausreichen (der praktisch immer direkt anschliesst, ohne
-    // echte Lücke), sonst würde ein kurzer Block optisch in den nächsten
-    // hineinragen, obwohl beide Zeiten korrekt und überlappungsfrei sind
-    // (Nutzer-Screenshot 2026-07-09: genau dieser Effekt bei aufeinander-
-    // folgenden kurzen Blöcken). Nur wenn zwischen diesem und dem nächsten
-    // Eintrag tatsächlich eine Lücke besteht (z.B. ein <20min-Restfenster vor
-    // einem Termin, das fillWindow() bewusst frei lässt), darf die
-    // Mindesthöhe diese Lücke ausfüllen. entries[i+1] ist notfalls die
-    // 'end'-Markierung, die ebenfalls ein gültiges .time trägt.
+    // Grundproblem: die Höhe eines Blocks ergibt sich rein aus seiner echten
+    // Dauer (PXMIN=1.15px/Min) — ein Block unter ~13 Minuten hat schlicht
+    // nicht genug Pixel-Höhe, um Zeit+Name lesbar zu zeigen, egal wie das
+    // Label formatiert wird. "Auf Mindesthöhe strecken" würde ihn (ohne
+    // echte Lücke zum nächsten Eintrag) optisch überlappen lassen; "auf die
+    // echte, zu kurze Höhe deckeln" (voriger Fix) lässt den Text durch
+    // overflow:hidden unlesbar verschwinden. Für so kurze Blöcke daher gar
+    // kein Text mehr im Block selbst (siehe isMarker unten) — nur ein
+    // schmaler Farbstreifen, Details per Hover-Tooltip (Nutzer-Entscheidung
+    // 2026-07-09). Erst ab da lohnt sich überhaupt eine Lesbarkeits-
+    // Mindesthöhe, und auch die darf NIE über den Start des nächsten
+    // Eintrags hinausreichen (entries[i+1] ist notfalls die 'end'-Markierung,
+    // die ebenfalls ein gültiges .time trägt) — nur bei einer echten Lücke
+    // (z.B. <20min-Restfenster vor einem Termin) darf sie diese ausfüllen.
     const natural=dur*PXMIN;
     const nextTime=i+1<entries.length ? entries[i+1].time : gridEnd;
     const maxAllowed=Math.max(natural,(nextTime-e.time)*PXMIN);
-    const height=Math.min(Math.max(18,natural), maxAllowed);
+    const isMarker=natural<15;
+    const height=Math.min(Math.max(isMarker?3:18,natural), maxAllowed);
     let bg,tx,label,cls='';
     if(e.type==='topic'){
       const s=S_MAP[e.t.subj]; bg=s.bg; tx=s.tx; label=esc(e.t.name);
@@ -2446,22 +2456,16 @@ function renderPlanGrid(entries, prefs){
     } else if(e.type==='review'){
       bg='#dbeafe'; tx='#1e40af'; label='🔄 Wiederholung ('+e.topics.length+')';
     } else continue;
-    // .grid-block hat overflow:hidden (siehe CSS) — verhindert zwar, dass
-    // Inhalt optisch in den nächsten Block überläuft, aber bei sehr kurzen
-    // Blöcken (<~28px, z.B. eine 10min-Pause ohne Lücke zum nächsten Eintrag,
-    // siehe height-Berechnung oben) passt die normale Zwei-Zeilen-Aufteilung
-    // (Zeit + Name) nicht mehr rein — der Name wird dann komplett weg-
-    // geschnitten, unsichtbar, statt sichtbar zu bleiben (Nutzer-Screenshot
-    // 2026-07-09, nach dem vorherigen Overlap-Fix neu aufgefallen). Für
-    // solche Blöcke eine einzeilige, kompakte Variante (Zeit+Name zusammen)
-    // statt der Zwei-Zeilen-Aufteilung — der volle Titel bleibt zusätzlich
-    // im title-Tooltip verfügbar.
-    const compact=height<28;
-    const bodyHtml=compact
+    // Ab 28px passt Zeit+Name als Zwei-Zeiler; darunter (aber über der
+    // Marker-Schwelle) eine einzeilige kompakte Variante (Zeit+Name
+    // zusammen); Marker-Blöcke zeigen gar keinen Text im Block selbst, nur
+    // den title-Tooltip.
+    const compact=!isMarker && height<28;
+    const bodyHtml=isMarker ? '' : compact
       ? `<div class="grid-block-name">${fmtTime(e.time)} · ${label}</div>`
       : `<div class="grid-block-time">${fmtTime(e.time)}–${fmtTime(e.time+dur)}</div>
       <div class="grid-block-name">${label}</div>`;
-    blocksHtml+=`<div class="grid-block ${cls}" style="top:${top}px;height:${height}px;background:${bg};color:${tx}" title="${label} · ${fmtTime(e.time)}–${fmtTime(e.time+dur)}">
+    blocksHtml+=`<div class="grid-block ${cls}${isMarker?' grid-block-marker':''}" style="top:${top}px;height:${height}px;background:${bg};color:${tx}" title="${label} · ${fmtTime(e.time)}–${fmtTime(e.time+dur)}">
       ${bodyHtml}
     </div>`;
   }
