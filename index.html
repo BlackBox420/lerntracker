@@ -2107,6 +2107,11 @@ function mergeIntervals(list){
       const last=out[out.length-1];
       last.end=Math.max(last.end, iv.end);
       if(iv.label && iv.label!==last.label) last.label = last.label ? `${last.label} + ${iv.label}` : iv.label;
+      // movable (siehe buildDayFrame()/placeChunksFrame()): verschmilzt ein
+      // Termin (nie verschiebbar) mit einer Mahlzeit, muss das Ergebnis als
+      // Ganzes fix bleiben — sonst würde ein eigentlich fixer Termin über die
+      // Verschiebe-Logik plötzlich doch nach hinten rutschen.
+      last.movable = (last.movable??false) && (iv.movable??false);
     } else out.push({...iv});
   }
   return out;
@@ -2253,8 +2258,27 @@ function placeChunksFrame(chunks, reviewQ, fixed, prefs, state){
     }
   }
 
-  for(const f of fixed){
-    if(f.start>=prefs.end) break;
+  for(const f0 of fixed){
+    if(f0.start>=prefs.end) break;
+    let f=f0;
+    // Bewegliche Blöcke (Mahlzeiten, movable:true — siehe buildDayFrame())
+    // dürfen sich um das nötige Minimum nach hinten verschieben, wenn sie
+    // sonst mitten in der aktuellen Lerneinheit landen und danach nur noch
+    // ein zu kurzes Rest-Fragment (<30min) übrig bliebe — z.B. ein Thema
+    // 11:45-13:00, dann Mittagessen 13:00-13:30, dann nur noch 15min
+    // desselben Themas (Nutzer-Beispiel 2026-07-10). Termine (movable:false)
+    // bleiben davon unberührt, die verschieben sich nie. Nur relevant, wenn
+    // wir gerade WIRKLICH mitten in einem Chunk stecken (der bis zur Mahlzeit
+    // NICHT von selbst fertig würde) — sonst bräuchte es keine Verschiebung.
+    if(f.movable && chunkIdx<chunks.length){
+      const remainInChunk=chunks[chunkIdx].dur-chunkOffset;
+      const availBeforeMeal=Math.max(0,f.start-cur);
+      const wouldRemainAfter=remainInChunk-availBeforeMeal;
+      if(availBeforeMeal>0 && wouldRemainAfter>0 && wouldRemainAfter<30){
+        const delay=wouldRemainAfter;
+        f={...f, start:f.start+delay, end:f.end+delay};
+      }
+    }
     fillWindow(Math.max(cur,f.start));
     cur=Math.max(cur,f.start);
     const dur=Math.min(f.end,prefs.end)-cur;
@@ -2309,22 +2333,26 @@ function buildDayFrame(dayOffset){
   const prefs=effectiveDayPrefs(dayOffset);
   const dateStr=dateStrForOffset(dayOffset);
   const appts=(dayOffset===0 ? (getTodayAppointments()||[]) : getAppointmentsForDate(dateStr))
-    .map(a=>({start:toMin(a.start),end:toMin(a.end),label:a.label||'Termin'}));
+    .map(a=>({start:toMin(a.start),end:toMin(a.end),label:'📌 '+(a.label||'Termin'), movable:false}));
   const cardMin=dayOffset===0 ? estimatedCardMinutesPerDay() : 0;
   // Mahlzeiten kommen jetzt aus prefs.meals statt fixer lunch/dinner-Werte —
   // jede der drei (Frühstück/Mittag-/Abendessen) ist einzeln an-/abschaltbar
-  // und hat eine selbst gewählte Uhrzeit (siehe renderMealsSection()).
+  // und hat eine selbst gewählte Uhrzeit (siehe renderMealsSection()). movable:
+  // true, im Gegensatz zu Terminen — siehe placeChunksFrame() für die Logik,
+  // die eine Mahlzeit ggf. um bis zu 30min nach hinten schiebt, damit sie nicht
+  // mitten in einer Lerneinheit ein zu kurzes Rest-Fragment abschneidet
+  // (Nutzer-Entscheidung 2026-07-10).
   const mealBlocks=Object.entries(prefs.meals)
     .filter(([,m])=>m.enabled)
-    .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key]}));
+    .map(([key,m])=>({start:m.time,end:m.time+m.dur,label:MEAL_LABELS[key], movable:true}));
   // Prüfungssimulationen sind hier bewusst KEIN fixer Block mehr — sie rotieren
   // seit examSimScore() als virtuelle Themen mit echtem Lernstoff um Zeit
   // (siehe buildStudyChunks()), landen also je nach Priorität irgendwo in den
   // freien Fenstern unten, nicht zwangsläufig ganz am Tagesanfang.
   const fixedRaw=mergeIntervals([
-    ...appts.map(a=>({...a, label:'📌 '+a.label})),
+    ...appts,
     ...mealBlocks,
-    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten'}]:[])
+    ...(cardMin>0?[{start:prefs.start,end:prefs.start+cardMin,label:'🗂️ Karteikarten', movable:false}]:[])
   ].filter(iv=>iv.end>prefs.start && iv.start<prefs.end));
   // renderPlanGrid() hebt Blöcke unter ~16min optisch auf eine Mindesthöhe
   // (18px), damit Zeit+Label lesbar bleiben — ohne eine entsprechende
