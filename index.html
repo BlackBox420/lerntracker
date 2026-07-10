@@ -1825,20 +1825,33 @@ function saveDayPrefs(dateStr, p){
 function currentPlanDateStr(){ return dateStrForOffset(planDayOffset); }
 
 // Liefert die Einstellungen für einen Tag, für "heute" (dayOffset=0)
-// zusätzlich auf "jetzt" gekappt: Vergangenheit wird nicht neu berechnet oder
-// dargestellt — sonst würde eine Einstellungsänderung im Tagesverlauf (z.B.
-// Beginn nachträglich auf 15 Uhr gesetzt, weil man erst dann wirklich
-// angefangen hat) rückwirkend auch das schon vergangene Vormittags-Programm
-// umschreiben. Ein Block, der genau jetzt läuft (Start vor, Ende nach
-// "jetzt"), wird dadurch auf seinen verbleibenden Rest gekappt statt komplett
-// zu verschwinden oder unverändert von vorne gezeigt zu werden — echtes
-// Zeitreisen geht ohnehin nicht (Nutzer-Feedback 2026-07-09). Rein für
-// Platzierung/Anzeige (buildDayFrame()/renderPlan()); der in "Beginn"
-// gespeicherte Rohwert bleibt unverändert, das Eingabefeld zeigt also weiter,
-// was tatsächlich eingetragen wurde.
+// zusätzlich auf "jetzt" gekappt — ABER NUR, wenn für heute bereits ein
+// Schnappschuss existiert, der wirklich ab dem konfigurierten Tagesbeginn
+// reicht (siehe getScheduleSnapshot()). Ohne diese Bedingung würde schon der
+// ALLERERSTE Blick auf den Plan an einem Tag (noch kein Schnappschuss) direkt
+// ab "jetzt" statt ab dem echten Beginn rechnen — alles zwischen Tagesbeginn
+// und diesem ersten Öffnen bliebe dann für immer eine leere Lücke, weil dafür
+// nie etwas berechnet/eingefroren wurde (Nutzer-Feedback 2026-07-09: "Vergangenes
+// soll immer noch angezeigt werden, nicht verschwinden"). Reicht der bisherige
+// Schnappschuss NICHT bis zum Beginn zurück (z.B. weil er selbst noch von
+// diesem Lücken-Bug betroffen ist), wird einmalig wieder komplett ab dem
+// echten Beginn geplant — heilt einen bereits "verunglückten" Tag beim
+// nächsten Rendern automatisch aus.
+// Ist ein Schnappschuss vorhanden UND deckt er den Beginn ab, gilt weiterhin:
+// Vergangenheit wird nicht neu berechnet — sonst würde eine Einstellungs-
+// änderung im Tagesverlauf (z.B. Beginn nachträglich auf 15 Uhr gesetzt, weil
+// man erst dann wirklich angefangen hat) rückwirkend auch das schon
+// vergangene Vormittags-Programm umschreiben. Echtes Zeitreisen geht ohnehin
+// nicht. Rein für Platzierung/Anzeige (buildDayFrame()/renderPlan()); der in
+// "Beginn" gespeicherte Rohwert bleibt unverändert, das Eingabefeld zeigt
+// also weiter, was tatsächlich eingetragen wurde.
 function effectiveDayPrefs(dayOffset){
   const prefs=getDayPrefs(dateStrForOffset(dayOffset));
   if(dayOffset!==0) return prefs;
+  const snap=getScheduleSnapshot(todayStr());
+  const earliestFrozen=snap && snap.length ? Math.min(...snap.filter(e=>e.type!=='end').map(e=>e.time)) : null;
+  const coversFromStart=earliestFrozen!==null && earliestFrozen<=prefs.start+1;
+  if(!coversFromStart) return prefs;
   const now=new Date();
   const nowMin=now.getHours()*60+now.getMinutes();
   return nowMin>prefs.start ? {...prefs, start:nowMin} : prefs;
