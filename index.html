@@ -3054,6 +3054,15 @@ function _connectSync(key){
       if(activeTab==='cards') renderCardsView();
       if(activeTab==='stats') renderStatsView();
       syncStatus('↓ '+new Date().toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'}),true);
+    }, err=>{
+      // Ohne diesen dritten .on()-Callback bleibt der Status bei einem von den
+      // Firebase-Regeln verweigerten Zugriff (z.B. PERMISSION_DENIED, weil die
+      // Realtime-Database-Rules noch auf "alles sperren" stehen) für immer bei
+      // "Verbinde…" hängen — der Erfolgs-Callback feuert dann nie, aber ohne
+      // Error-Callback gibt's auch keine Fehlermeldung (Nutzer-Meldung
+      // 2026-07-11: Sync hängt dauerhaft bei "Verbinde…", obwohl Schlüssel +
+      // Config auf beiden Geräten identisch sind).
+      syncStatus('✗ '+(err.code||err.message),false);
     });
   }catch(e){ syncStatus('✗ '+e.message,false); }
 }

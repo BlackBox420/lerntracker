@@ -1,0 +1,17 @@
+#!/bin/sh
+# Wird von scripts/install-hooks.sh nach .git/hooks/pre-commit kopiert
+# (.git/hooks selbst ist nicht von git getrackt, daher dieser Umweg).
+# Läuft vor jedem Commit: ist eine SHELL-Datei (index.html/manifest.json)
+# Teil des Commits, wird die CACHE-Version in sw.js automatisch aus dem
+# tatsächlichen Dateiinhalt neu berechnet und mitcommittet — kein manuelles
+# Hochzählen mehr nötig, siehe scripts/update_sw_cache.py. Single-file-Repo,
+# daher schlankerer Dateifilter als im General-Schwester-Repo (kein js/*.js,
+# kein style.css).
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+if echo "$staged" | grep -qE '^(index\.html|manifest\.json)$'; then
+  python3 scripts/update_sw_cache.py
+  git add sw.js
+fi
