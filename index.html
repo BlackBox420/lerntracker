@@ -1141,7 +1141,11 @@ function getStreak(){
     const key=localDateStr(d);
     if(key<firstKey) break;
     const e=HISTORY[key];
-    if(!e || e.reviewsDue===0 || e.reviewsDone.length>=e.reviewsDue){
+    // (e.reviewsDone||[]) statt e.reviewsDone: ältere Tageseinträge (vor
+    // Einführung dieses Felds, oder von einem Sync mit älterem Code) haben
+    // reviewsDone evtl. gar nicht — nur todayHistoryEntry() normalisiert das
+    // für den heutigen Eintrag, hier lesen wir aber auch vergangene Tage roh.
+    if(!e || e.reviewsDue===0 || (e.reviewsDone||[]).length>=e.reviewsDue){
       streak++;
       d.setDate(d.getDate()-1);
     } else break;
@@ -1156,7 +1160,7 @@ function getWeeklyRecap(){
     const e=HISTORY[localDateStr(d)];
     if(!e) continue;
     due+=e.reviewsDue;
-    done+=Math.min(e.reviewsDue, e.reviewsDone.length);
+    done+=Math.min(e.reviewsDue, (e.reviewsDone||[]).length); // siehe Kommentar in getStreak()
   }
   return {due, done};
 }

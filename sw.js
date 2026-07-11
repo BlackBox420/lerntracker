@@ -8,7 +8,7 @@
 // SHELL hätte also nie ein Update ausgelöst, egal wie oft sich die
 // gecachten Dateien inhaltlich ändern. Identisches Prinzip wie im
 // Schwester-Repo (General), siehe dortige sw.js.
-const CACHE = 'lernplan-2dd051367900';
+const CACHE = 'lernplan-051264075826';
 const SHELL = ['./','./index.html','./manifest.json'];
 
 self.addEventListener('install', e=>{
